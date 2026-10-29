@@ -1,4 +1,9 @@
-pyTelegramBotAPI>=4.14.0
-requests
-segno
-neonize
+​python-telegram-bot>=21.6,<22
+​pytelegrambotapi>=4.14.0
+​requests
+​segno
+​neonize
+​phonenumbers
+​beautifulsoup4
+​openpyxl
+​xlrd
