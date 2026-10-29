@@ -1,8 +1,8 @@
-python-telegram-bot>=21.6,<22
 pytelegrambotapi>=4.14.0
 requests
 segno
 phonenumbers
+pycountry
 beautifulsoup4
 openpyxl
 xlrd
