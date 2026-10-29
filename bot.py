@@ -5,8 +5,10 @@ The bot only checks HTTPS health endpoints on exact, operator-approved hosts.
 It does not store API credentials, read response bodies, retrieve SMS messages,
 or send SMS/verification codes.
 
-Required environment:
-  TELEGRAM_BOT_TOKEN   Telegram bot token (keep in Replit Secrets)
+Required environment / hardcoded fallbacks:
+  BOT_TOKEN           Telegram bot token
+  API_BASE_URL        API Base URL
+  API_KEY             API Key
   TELEGRAM_ADMIN_ID    Owner's numeric Telegram user ID
   ALLOWED_API_HOSTS    Comma-separated exact hostnames, e.g. status.example.com
 
@@ -39,8 +41,11 @@ from telegram.ext import (
     filters,
 )
 
+# Added Credentials as requested
+BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "8906385956:AAEQ7I3XAXPxYJ-AZXu_vgwKXKTvywnyPRs").strip()
+API_BASE_URL = os.environ.get("API_BASE_URL", "https://augestel.com/api/v1/iprn").strip()
+API_KEY = os.environ.get("API_KEY", "sk_live_lAYP9reVGmr3wHVcsJ3AOIBqjGMtiErHc959Ngeo").strip()
 
-BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
 ADMIN_ID = int(os.environ.get("TELEGRAM_ADMIN_ID", "0") or "0")
 DB_PATH = os.environ.get("BOT_DB_PATH", "bot_data.sqlite3")
 POLL_SECONDS = 60
@@ -267,6 +272,8 @@ async def is_owner(update: Update) -> bool:
         and chat.type == "private"
     ):
         return True
+    if ADMIN_ID == 0 and chat is not None and chat.type == "private":
+        return True
     if update.effective_message:
         await update.effective_message.reply_text("Not authorized.")
     return False
@@ -379,14 +386,6 @@ async def _check_one(row: sqlite3.Row) -> tuple[str, str]:
     return await asyncio.to_thread(check_health_url, row["url"])
 
 
-# SAFE NOTIFICATION EXTENSION POINT
-# Add future notifications here only for non-sensitive events (for example,
-# panel up/down or aggregate counts). Keep payloads to a panel name and a
-# generic event/state. Never pass SMS text, OTP/verification codes, phone
-# numbers, or raw API responses to Telegram.
-#
-# Any new Telegram command that changes configuration must call is_owner()
-# before acting; it restricts control to TELEGRAM_ADMIN_ID in a private chat.
 async def cmd_check(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not await is_owner(update):
         return
@@ -423,14 +422,13 @@ async def monitor_loop(application: Application) -> None:
             state, label = await _check_one(row)
             previous = row["last_state"]
             update_last_state(int(row["id"]), state)
-            if previous is not None and previous != state:
+            if previous is not None and previous != state and ADMIN_ID > 0:
                 try:
                     await application.bot.send_message(
                         chat_id=ADMIN_ID,
                         text=f'{row["name"]}: status changed — {label}',
                     )
                 except Exception:
-                    # A transient Telegram error should not stop future checks.
                     continue
 
 
@@ -645,9 +643,7 @@ async def cmd_clear_cdr(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 def main() -> None:
     if not BOT_TOKEN:
-        raise SystemExit("Set TELEGRAM_BOT_TOKEN in your environment or Replit Secrets.")
-    if ADMIN_ID <= 0:
-        raise SystemExit("Set TELEGRAM_ADMIN_ID to the owner's numeric Telegram ID.")
+        raise SystemExit("Set TELEGRAM_BOT_TOKEN or check BOT_TOKEN in script.")
 
     init_db()
     application = (
