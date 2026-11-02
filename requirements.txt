@@ -6,4 +6,3 @@ pycountry
 beautifulsoup4
 openpyxl
 xlrd
-neonize
