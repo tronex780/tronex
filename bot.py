@@ -6,27 +6,77 @@ import time
 import re
 import os
 import threading
+import json
 import phonenumbers
 import pycountry
 
 # ==================== CONFIGURATION ====================
-BOT_TOKEN = "9249529212:AAGvubFY61S-ePYd8uMr1zDLntVhmRfLrpo"
+BOT_TOKEN = "8906385956:AAEQ7I3XAXPxYJ-AZXu_vgwKXKTvywnyPRs"
 OWNER_ID = 8523774444
 
-API_BASE_URL = "https://augestel.com/api/v1/iprn"
-API_KEY = "sk_live_lAYP9reVGmr3wHVcsJ3AOIBqjGMtiErHc959Ngeo"
-
 TARGET_GROUP_ID = "-1002414484554"
-BOT_USERNAME = "https://t.me/Hong_Kong_TG_bot"
+BOT_USERNAME = "https://t.me/gjifch743"
+MAIN_CHANNEL_URL = "https://t.me/facboo578"
 
 STOCK_FILE = "stock_numbers.txt"
 USED_FILE = "used_numbers.txt"
 NO_OTP_FILE = "no_otp_numbers.txt"
+CONFIG_FILE = "api_configs.json"
+
+# Augestel সহ মোট ৫টি প্যানেলের ডিফল্ট কনফিগারেশন
+DEFAULT_API_CONFIGS = [
+    {
+        "name": "Augestel",
+        "url": "https://augestel.com/api/v1/iprn/messages",
+        "token": "sk_live_lAYP9reVGmr3wHVcsJ3AOIBqjGMtiErHc959Ngeo",
+        "status": True
+    },
+    {
+        "name": "UnixSMS",
+        "url": "https://agent-api.unixsms.com/v2/cdr",
+        "token": "simple_v2_IgE7OEF0mKW9-B1-XnFtk6ogDRpVp0MZrEY0VPpahx8a0tTO",
+        "status": True
+    },
+    {
+        "name": "BlueSMS",
+        "url": "https://agent-api.blue-sms.net/v2/cdr",
+        "token": "simple_v2_TMhQ3XYK0e8F3xxWlXAsuNITa-AgktnF9Teu6ZcG1yOBMuBp",
+        "status": True
+    },
+    {
+        "name": "TempSMS",
+        "url": "https://tempsms.io/api/v1/messages",
+        "token": "kosTHorbMbgRhLigCNEZ4TdnNLvT99-gh9rdvCwxw34",
+        "status": True
+    },
+    {
+        "name": "CustomAPI_93",
+        "url": "http://93.127.133.98/crapi/st/viewstats",
+        "token": "f10fb5fed9d6e159bdabe1a0e83f00695612c35aaedf51e47984bfb4fd09a16e",
+        "status": True
+    }
+]
+
+def load_api_configs():
+    if not os.path.exists(CONFIG_FILE):
+        save_api_configs(DEFAULT_API_CONFIGS)
+        return DEFAULT_API_CONFIGS
+    try:
+        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except:
+        return DEFAULT_API_CONFIGS
+
+def save_api_configs(configs):
+    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+        json.dump(configs, f, indent=4)
+
+API_CONFIGS = load_api_configs()
 
 bot = telebot.TeleBot(BOT_TOKEN, threaded=True, num_threads=25)
 
 http_session = requests.Session()
-adapter = requests.adapters.HTTPAdapter(pool_connections=50, pool_maxsize=50)
+adapter = requests.adapters.HTTPAdapter(pool_connections=100, pool_maxsize=100)
 http_session.mount("https://", adapter)
 http_session.mount("http://", adapter)
 
@@ -148,34 +198,69 @@ def format_group_number_with_rabbi(number_str):
         return f"<b>{first_3}</b>‣RABBI‣<b>{last_3}</b>"
     return f"<b>{clean}</b>"
 
-def run_startup_tests():
-    print("=" * 50)
-    print("🔍 Running Bot Startup Diagnostics...")
-    try:
-        bot.send_message(TARGET_GROUP_ID, "🚀 OTP Group Bot Started & Connected Successfully!")
-        print("✅ Telegram Group Connection: SUCCESS")
-    except Exception as e:
-        print(f"❌ Telegram Group Connection: FAILED -> {e}")
-
-    headers = {'Authorization': f'Bearer {API_KEY}', 'Accept': 'application/json'}
-    try:
-        res = http_session.get(f"{API_BASE_URL}/messages", headers=headers, params={'per_page': 1}, timeout=15)
-        print(f"📡 API Status Code: {res.status_code}")
-        if res.status_code == 200:
-            print("✅ Augestel API Connection: SUCCESS")
-        else:
-            print(f"❌ Augestel API Connection: FAILED (Code: {res.status_code})")
-    except Exception as e:
-        print(f"❌ Augestel API Connection: FAILED -> {e}")
-    print("=" * 50)
-
 @bot.message_handler(commands=['start'])
 def start_cmd(message):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.add("📱 Get Number", "📊 Stats")
     if is_admin(message.chat.id):
-        markup.add("➕ Add Number", "🗑 Delete Number", "📂 Get No-OTP File")
+        markup.add("➕ Add Number", "🗑 Delete Number")
+        markup.add("⚙️ API Panels Control", "➕ Add New API")
+        markup.add("📂 Get No-OTP File")
     bot.send_message(message.chat.id, "⚡ OTP Group Bot Active!", reply_markup=markup)
+
+# ==================== ADMIN: API PANELS CONTROL ====================
+@bot.message_handler(func=lambda m: m.text == "⚙️ API Panels Control" and is_admin(m.chat.id))
+def api_panels_control(message):
+    markup = InlineKeyboardMarkup()
+    for idx, api in enumerate(API_CONFIGS):
+        status_icon = "🟢 ON" if api.get("status", True) else "🔴 OFF"
+        btn_text = f"{api['name']} ({status_icon})"
+        markup.add(InlineKeyboardButton(text=btn_text, callback_data=f"toggle_api_{idx}"))
+    
+    bot.send_message(message.chat.id, "⚙️ <b>API Panels Status & Management:</b>\nপ্যানেল অন/অফ করতে নিচের বাটনে ক্লিক করুন:", parse_mode="HTML", reply_markup=markup)
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("toggle_api_"))
+def callback_toggle_api(call):
+    bot.answer_callback_query(call.id)
+    idx = int(call.data.split("_")[2])
+    if idx < len(API_CONFIGS):
+        current_status = API_CONFIGS[idx].get("status", True)
+        API_CONFIGS[idx]["status"] = not current_status
+        save_api_configs(API_CONFIGS)
+        
+        markup = InlineKeyboardMarkup()
+        for i, api in enumerate(API_CONFIGS):
+            status_icon = "🟢 ON" if api.get("status", True) else "🔴 OFF"
+            btn_text = f"{api['name']} ({status_icon})"
+            markup.add(InlineKeyboardButton(text=btn_text, callback_data=f"toggle_api_{i}"))
+        try:
+            bot.edit_message_reply_markup(call.message.chat.id, call.message.message_id, reply_markup=markup)
+        except:
+            pass
+
+@bot.message_handler(func=lambda m: m.text == "➕ Add New API" and is_admin(m.chat.id))
+def add_new_api_prompt(message):
+    msg = bot.send_message(message.chat.id, "নতুন এপিআই যোগ করতে নিচের ফরম্যাটে তথ্য পাঠান:\n\n<b>Name, URL, Token</b>\n\nউদাহরণ:\n<code>MyCustomSMS, https://api.example.com/v2/cdr, sk_live_xxx...</code>", parse_mode="HTML")
+    bot.register_next_step_handler(msg, process_add_new_api)
+
+def process_add_new_api(message):
+    try:
+        parts = [p.strip() for p in message.text.split(",")]
+        if len(parts) < 3:
+            bot.send_message(message.chat.id, "❌ ফরম্যাট সঠিক নয়! আবার চেষ্টা করুন।")
+            return
+        name, url, token = parts[0], parts[1], parts[2]
+        new_api = {
+            "name": name,
+            "url": url,
+            "token": token,
+            "status": True
+        }
+        API_CONFIGS.append(new_api)
+        save_api_configs(API_CONFIGS)
+        bot.send_message(message.chat.id, f"✅ সফলভাবে নতুন এপিআই প্যানেল <b>{name}</b> যুক্ত করা হয়েছে!", parse_mode="HTML")
+    except Exception as e:
+        bot.send_message(message.chat.id, f"❌ ত্রুটি ঘটেছে: {e}")
 
 # ==================== ADMIN: ADD NUMBER VIA FILE ====================
 @bot.message_handler(func=lambda m: m.text == "➕ Add Number" and is_admin(m.chat.id))
@@ -258,7 +343,7 @@ def handle_document(message):
                 f"🚀 **Use bot link to get your numbers!** 👉"
             )
             markup = InlineKeyboardMarkup()
-            markup.add(InlineKeyboardButton(text="🤖 Open OTP Group Bot", url=BOT_USERNAME))
+            markup.add(InlineKeyboardButton(text="OTP Group", url=BOT_USERNAME))
             try:
                 bot.send_message(TARGET_GROUP_ID, group_post, parse_mode="Markdown", reply_markup=markup)
             except Exception as e:
@@ -267,7 +352,6 @@ def handle_document(message):
     except Exception as e:
         bot.send_message(message.chat.id, f"❌ ফাইল প্রসেস করতে সমস্যা হয়েছে: {e}")
 
-# ==================== ADMIN: DELETE NUMBER ====================
 @bot.message_handler(func=lambda m: m.text == "🗑 Delete Number" and is_admin(m.chat.id))
 def delete_num_prompt(message):
     markup = InlineKeyboardMarkup()
@@ -313,7 +397,6 @@ def callback_back_delsrv(call):
     bot.answer_callback_query(call.id)
     delete_num_prompt(call.message)
 
-# ==================== USER: GET NUMBER FLOW ====================
 @bot.message_handler(func=lambda m: m.text == "📱 Get Number")
 def get_number_handler(message):
     markup = InlineKeyboardMarkup()
@@ -370,7 +453,24 @@ def export_no_otp_file(message):
 @bot.message_handler(func=lambda m: m.text == "📊 Stats")
 def show_stats(message):
     total_stock = sum(len(nums) for countries in stock_data.values() for nums in countries.values())
-    text = f"📊 <b>Bot Stats:</b>\n\n📦 Total Stock: {total_stock}\n✅ OTP Received: {len(used_numbers)}\n❌ No OTP: {len(no_otp_numbers)}"
+    
+    # সকল প্যানেল (Augestel সহ) হেলথ চেক
+    panel_status_text = "<b>API Panels Status:</b>\n"
+    for api in API_CONFIGS:
+        if not api.get("status", True):
+            panel_status_text += f"• {api['name']}: OFF 🔴\n"
+            continue
+        try:
+            headers = {'Authorization': f'Bearer {api["token"]}', 'Accept': 'application/json'}
+            res = http_session.get(api["url"], headers=headers, params={'per_page': 1}, timeout=3)
+            if res.status_code == 200:
+                panel_status_text += f"• {api['name']}: Ok ✅\n"
+            else:
+                panel_status_text += f"• {api['name']}: Error ❌ (Code: {res.status_code})\n"
+        except:
+            panel_status_text += f"• {api['name']}: Error ❌\n"
+
+    text = f"📊 <b>Bot Stats:</b>\n\n📦 Total Stock: {total_stock}\n✅ OTP Received: {len(used_numbers)}\n❌ No OTP: {len(no_otp_numbers)}\n\n{panel_status_text}"
     bot.send_message(message.chat.id, text, parse_mode="HTML")
 
 def build_assignment_keyboard(num1, service1, otp1, num2, service2, otp2):
@@ -386,7 +486,7 @@ def build_assignment_keyboard(num1, service1, otp1, num2, service2, otp2):
     copy_val_2 = str(otp2) if otp2 else "Waiting"
     btn_otp2 = InlineKeyboardButton(text=text_otp2, copy_text=CopyTextButton(text=copy_val_2))
     
-    btn_bot = InlineKeyboardButton(text="OTP Group Bot", url=BOT_USERNAME)
+    btn_bot = InlineKeyboardButton(text="OTP Group", url=BOT_USERNAME)
     btn_channel = InlineKeyboardButton(text="Main Channel", url="https://t.me/facboo578")
     btn_change = InlineKeyboardButton(text="🔄 Change Number", callback_data="change_number_act")
     
@@ -451,128 +551,134 @@ def send_number_panel(chat_id, edit_message_id=None, selected_service="OTP", sel
     active_assignments[num1] = {"chat_id": chat_id, "message_id": msg_id, "slot": 1, "pair": num2, "otp": None, "service": selected_service, "country": selected_country}
     active_assignments[num2] = {"chat_id": chat_id, "message_id": msg_id, "slot": 2, "pair": num1, "otp": None, "service": selected_service, "country": selected_country}
 
-def fetch_from_augestel_api():
-    url = f"{API_BASE_URL}/messages"
+# ==================== SUPER-FAST CONCURRENT API FETCHER ====================
+def fetch_single_api(api):
+    if not api.get("status", True):
+        return []
+    url = api["url"]
+    token = api["token"]
     headers = {
-        'Authorization': f'Bearer {API_KEY}',
+        'Authorization': f'Bearer {token}',
         'Accept': 'application/json'
     }
-    params = {'per_page': 5, 'page': 1}
-    
+    params = {'per_page': 10, 'page': 1}
     try:
-        res = http_session.get(url, headers=headers, params=params, timeout=15)
-        
-        if res.status_code == 429:
-            retry_after = int(res.headers.get("Retry-After", 20))
-            print(f"⚠️ Rate limit hit (429). Pausing for {retry_after} seconds...")
-            time.sleep(retry_after)
-            return
-
-        if res.status_code != 200:
-            return
-        
-        response_data = res.json()
-        if not response_data.get("success", False):
-            return
-            
-        records = response_data.get("data", [])
-        if isinstance(records, list):
-            records.reverse()
-
-        for item in records:
-            if not isinstance(item, dict):
-                continue
-
-            number = str(item.get('number', ''))
-            sms_text = item.get('message', '')
-            received_at = item.get('received_at', '')
-
-            unique_id = f"{number}_{received_at}_{sms_text}"
-            if unique_id in processed_ids:
-                continue
-
-            otp_code = extract_otp(sms_text)
-            service_short = get_service_short_name(sms_text)
-            clean_num = number.replace("+", "")
-
-            if clean_num not in used_numbers:
-                used_numbers.add(clean_num)
-                append_to_file_safe(USED_FILE, clean_num)
-                
-            if clean_num in no_otp_numbers:
-                no_otp_numbers.remove(clean_num)
-                save_list_from_memory(NO_OTP_FILE, list(no_otp_numbers))
-
-            flag, country_code, country_name = get_country_info(clean_num)
-            formatted_rabbi_num = format_group_number_with_rabbi(clean_num)
-            
-            group_msg = f"{flag} #{country_code} 📱 {formatted_rabbi_num} #{country_code}\n💬 [{service_short}] OTP: <code>{otp_code}</code>"
-            
-            markup = InlineKeyboardMarkup()
-            copy_btn = InlineKeyboardButton(text=f"📋 {otp_code}", copy_text=CopyTextButton(text=str(otp_code)))
-            btn_bot = InlineKeyboardButton(text="OTP Group Bot", url=BOT_USERNAME)
-            btn_channel = InlineKeyboardButton(text="Main Channel", url="https://t.me/facboo578")
-            
-            markup.add(copy_btn)
-            markup.add(btn_bot, btn_channel)
-
-            try:
-                bot.send_message(TARGET_GROUP_ID, group_msg, parse_mode="HTML", reply_markup=markup)
-            except Exception as e:
-                print(f"Group send error: {e}")
-
-            if clean_num in active_assignments:
-                info = active_assignments[clean_num]
-                info["otp"] = otp_code
-                pair_num = info["pair"]
-                srv_name = info.get("service", "OTP")
-                
-                pair_info = active_assignments.get(pair_num) or historical_assignments.get(pair_num)
-                pair_otp = pair_info["otp"] if pair_info else None
-                
-                n1, o1 = (clean_num, otp_code) if info["slot"] == 1 else (pair_num, pair_otp)
-                n2, o2 = (pair_num, pair_otp) if info["slot"] == 1 else (clean_num, otp_code)
-
-                new_markup = build_assignment_keyboard(n1, srv_name, o1, n2, srv_name, o2)
-                try:
-                    bot.edit_message_reply_markup(chat_id=info["chat_id"], message_id=info["message_id"], reply_markup=new_markup)
-                except:
-                    pass
-
-            elif clean_num in historical_assignments:
-                info = historical_assignments[clean_num]
-                info["otp"] = otp_code
-                pair_num = info["pair"]
-                srv_name = info.get("service", "OTP")
-                
-                pair_info = active_assignments.get(pair_num) or historical_assignments.get(pair_num)
-                pair_otp = pair_info["otp"] if pair_info else None
-                
-                n1, o1 = (clean_num, otp_code) if info["slot"] == 1 else (pair_num, pair_otp)
-                n2, o2 = (pair_num, pair_otp) if info["slot"] == 1 else (clean_num, otp_code)
-
-                new_markup = build_assignment_keyboard(n1, srv_name, o1, n2, srv_name, o2)
-                try:
-                    bot.edit_message_reply_markup(chat_id=info["chat_id"], message_id=info["message_id"], reply_markup=new_markup)
-                except:
-                    pass
-
-            processed_ids.add(unique_id)
-
+        res = http_session.get(url, headers=headers, params=params, timeout=5)
+        if res.status_code == 200:
+            data = res.json()
+            if data.get("success", False):
+                return data.get("data", [])
     except Exception as e:
-        print(f"API fetch error: {e}")
+        print(f"API Error ({api['name']}): {e}")
+    return []
+
+def fetch_all_apis_concurrently():
+    all_records = []
+    threads = []
+    results_lock = threading.Lock()
+
+    def worker(api):
+        records = fetch_single_api(api)
+        if records:
+            with results_lock:
+                all_records.extend(records)
+
+    for api in API_CONFIGS:
+        t = threading.Thread(target=worker, args=(api,))
+        threads.append(t)
+        t.start()
+
+    for t in threads:
+        t.join()
+    return all_records
+
+def process_fetched_messages():
+    records = fetch_all_apis_concurrently()
+    if not records:
+        return
+
+    for item in records:
+        if not isinstance(item, dict):
+            continue
+
+        number = str(item.get('number', ''))
+        sms_text = item.get('message', '')
+        received_at = item.get('received_at', '')
+
+        unique_id = f"{number}_{received_at}_{sms_text}"
+        if unique_id in processed_ids:
+            continue
+
+        otp_code = extract_otp(sms_text)
+        service_short = get_service_short_name(sms_text)
+        clean_num = number.replace("+", "")
+
+        if clean_num not in used_numbers:
+            used_numbers.add(clean_num)
+            append_to_file_safe(USED_FILE, clean_num)
+            
+        if clean_num in no_otp_numbers:
+            no_otp_numbers.remove(clean_num)
+            save_list_from_memory(NO_OTP_FILE, list(no_otp_numbers))
+
+        flag, country_code, country_name = get_country_info(clean_num)
+        formatted_rabbi_num = format_group_number_with_rabbi(clean_num)
+        
+        group_msg = f"{flag} #{country_code} 📱 {formatted_rabbi_num} #{country_code}\n💬 [{service_short}] OTP: <code>{otp_code}</code>"
+        
+        markup = InlineKeyboardMarkup()
+        copy_btn = InlineKeyboardButton(text=f"📋 {otp_code}", copy_text=CopyTextButton(text=str(otp_code)))
+        btn_bot = InlineKeyboardButton(text="OTP Group", url=BOT_USERNAME)
+        btn_channel = InlineKeyboardButton(text="Main Channel", url="https://t.me/facboo578")
+        
+        markup.add(copy_btn)
+        markup.add(btn_bot, btn_channel)
+
+        try:
+            bot.send_message(TARGET_GROUP_ID, group_msg, parse_mode="HTML", reply_markup=markup)
+        except Exception as e:
+            print(f"Group send error: {e}")
+
+        # ইউজার যদি নাম্বার পরিবর্তনও করে তবুও ইনবক্সে বা হিস্টরিতে থাকা নাম্বারের OTP নির্দিষ্ট ফরম্যাটে পাঠানো
+        if clean_num in active_assignments or clean_num in historical_assignments:
+            info = active_assignments.get(clean_num) or historical_assignments.get(clean_num)
+            info["otp"] = otp_code
+            pair_num = info["pair"]
+            srv_name = info.get("service", "OTP")
+            
+            # ইউজারকে ইনবক্সে নির্দিষ্ট ফরম্যাটে নোটিফিকেশন পাঠানো
+            try:
+                user_chat_id = info["chat_id"]
+                inbox_msg = f"{flag} {srv_name} +{clean_num}\n\n📋 {otp_code}"
+                inbox_markup = InlineKeyboardMarkup()
+                inbox_markup.add(InlineKeyboardButton(text=f"📋 {otp_code}", copy_text=CopyTextButton(text=str(otp_code))))
+                bot.send_message(user_chat_id, inbox_msg, reply_markup=inbox_markup)
+            except Exception as e:
+                print(f"Inbox send error: {e}")
+
+            pair_info = active_assignments.get(pair_num) or historical_assignments.get(pair_num)
+            pair_otp = pair_info["otp"] if pair_info else None
+            
+            n1, o1 = (clean_num, otp_code) if info["slot"] == 1 else (pair_num, pair_otp)
+            n2, o2 = (pair_num, pair_otp) if info["slot"] == 1 else (clean_num, otp_code)
+
+            new_markup = build_assignment_keyboard(n1, srv_name, o1, n2, srv_name, o2)
+            try:
+                bot.edit_message_reply_markup(chat_id=info["chat_id"], message_id=info["message_id"], reply_markup=new_markup)
+            except:
+                pass
+
+        processed_ids.add(unique_id)
 
 def background_worker():
-    time.sleep(5)
+    time.sleep(2)
     while True:
-        fetch_from_augestel_api()
-        if len(processed_ids) > 6000:
+        process_fetched_messages()
+        if len(processed_ids) > 8000:
             processed_ids.clear()
-        time.sleep(20)
+        time.sleep(1)
 
 if __name__ == "__main__":
-    run_startup_tests()
     t = threading.Thread(target=background_worker, daemon=True)
     t.start()
     bot.infinity_polling()
-EOF
