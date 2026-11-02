@@ -6,18 +6,20 @@ import time
 import re
 import os
 import threading
+from datetime import datetime, timezone, timedelta
 
 # ==================== CONFIGURATION ====================
-BOT_TOKEN = "9249529212:AAGvubFY61S-ePYd8uMr1zDLntVhmRfLrpo"
+BOT_TOKEN = "8906385956:AAEQ7I3XAXPxYJ-AZXu_vgwKXKTvywnyPRs"
 OWNER_ID = 8523774444
 
-# Augestel API Configuration (Working Key)
+# Augestel API Configuration
 API_BASE_URL = "https://augestel.com/api/v1/iprn"
 API_KEY = "sk_live_lAYP9reVGmr3wHVcsJ3AOIBqjGMtiErHc959Ngeo"
 
-# Telegram Group Chat ID & Bot Username
+# Telegram Group Chat ID & Bot Username/Link
 TARGET_GROUP_ID = "-1002414484554"
-BOT_USERNAME = "https://t.me/Hong_Kong_TG_bot"
+BOT_USERNAME = "https://t.me/tronex3_bot"
+MAIN_CHANNEL_URL = "https://t.me/facboo578"
 
 STOCK_FILE = "stock_numbers.txt"
 USED_FILE = "used_numbers.txt"
@@ -69,64 +71,56 @@ def extract_otp(message):
 def get_service_short_name(message_text):
     text_lower = message_text.lower()
     if "telegram" in text_lower or "tg" in text_lower:
-        return "TG"
+        return "TELEGRAM"
     elif "instagram" in text_lower or "ig" in text_lower:
-        return "IG"
+        return "INSTAGRAM"
     elif "whatsapp" in text_lower or "wa" in text_lower:
-        return "WA"
+        return "WHATSAPP"
     elif "google" in text_lower or "gmail" in text_lower:
-        return "GG"
+        return "GOOGLE"
     elif "facebook" in text_lower or "fb" in text_lower:
-        return "FB"
+        return "FACEBOOK"
     elif "twitter" in text_lower or "x.com" in text_lower:
-        return "X"
+        return "TWITTER"
     elif "imo" in text_lower:
         return "IMO"
-    elif "line" in text_lower:
-        return "LINE"
     else:
-        return "OTP"
+        return "WHATSAPP"
 
-# ডায়নামিক কান্ট্রি কোড ও ফ্ল্যাগ ডিটেকশন ম্যাপ (বড় কান্ট্রি কোডগুলো আগে চেক হবে)
+# কান্ট্রি কোড ও পতাকা ম্যাপিং
 COUNTRY_MAPPING = {
-    '880': ('🇧🇩', 'BD'),
-    '852': ('🇭🇰', 'HK'),
-    '86':  ('🇨🇳', 'CN'),
-    '49':  ('🇩🇪', 'DE'),
-    '44':  ('🇬🇧', 'UK'),
-    '1':   ('🇺🇸', 'US'),
-    '33':  ('🇫🇷', 'FR'),
-    '7':   ('🇷🇺', 'RU'),
-    '91':  ('🇮🇳', 'IN'),
-    '92':  ('🇵🇰', 'PK'),
-    '966': ('🇸🇦', 'SA'),
-    '971': ('🇦🇪', 'AE'),
-    '60':  ('🇲🇾', 'MY'),
-    '65':  ('🇸🇬', 'SG'),
-    '62':  ('🇮🇩', 'ID'),
-    '81':  ('🇯🇵', 'JP'),
-    '82':  ('🇰🇷', 'KR'),
-    '39':  ('🇮🇹', 'IT'),
-    '34':  ('🇪🇸', 'ES'),
-    '55':  ('🇧🇷', 'BR'),
-    '61':  ('🇦🇺', 'AU'),
-    '20':  ('🇪🇬', 'EG'),
-    '90':  ('🇹🇷', 'TR'),
-    '84':  ('🇻🇳', 'VN'),
-    '66':  ('🇹🇭', 'TH'),
+    '93':  ('🇦🇫', 'AFGHANISTAN'),
+    '880': ('🇧🇩', 'BANGLADESH'),
+    '852': ('🇭🇰', 'HONG KONG'),
+    '86':  ('🇨🇳', 'CHINA'),
+    '49':  ('🇩🇪', 'GERMANY'),
+    '44':  ('🇬🇧', 'UNITED KINGDOM'),
+    '1':   ('🇺🇸', 'UNITED STATES'),
+    '33':  ('🇫🇷', 'FRANCE'),
+    '7':   ('🇷🇺', 'RUSSIA'),
+    '91':  ('🇮🇳', 'INDIA'),
+    '92':  ('🇵🇰', 'PAKISTAN'),
+    '966': ('🇸🇦', 'SAUDI ARABIA'),
+    '971': ('🇦🇪', 'UAE'),
+    '60':  ('🇲🇾', 'MALAYSIA'),
+    '65':  ('🇸🇬', 'SINGAPORE'),
+    '62':  ('🇮🇩', 'INDONESIA'),
+    '81':  ('🇯🇵', 'JAPAN'),
+    '82':  ('🇰🇷', 'SOUTH KOREA'),
+    '39':  ('🇮🇹', 'ITALY'),
+    '34':  ('🇪🇸', 'SPAIN'),
+    '55':  ('🇧🇷', 'BRAZIL'),
+    '61':  ('🇦🇺', 'AUSTRALIA'),
 }
 
 def get_country_info(number_str):
     clean = re.sub(r'\D', '', number_str)
-    # প্রথমে ৪, ৩ এবং ২ ডিজিটের প্রিফিক্সগুলো মিলিয়ে দেখবে
     for length in [4, 3, 2, 1]:
         if len(clean) >= length:
             prefix = clean[:length]
             if prefix in COUNTRY_MAPPING:
                 return COUNTRY_MAPPING[prefix]
-    
-    prefix = clean[:3] if len(clean) >= 3 else clean
-    return "🌐", prefix
+    return '🌐', 'INTERNATIONAL'
 
 def format_group_number_with_rabbi(number_str):
     clean = re.sub(r'\D', '', number_str)
@@ -136,41 +130,23 @@ def format_group_number_with_rabbi(number_str):
         return f"<b>{first_3}</b>‣RABBI‣<b>{last_3}</b>"
     return f"<b>{clean}</b>"
 
-def run_startup_tests():
-    print("=" * 50)
-    print("🔍 Running Bot Startup Diagnostics...")
-    
-    tg_success = False
-    for attempt in range(3):
-        try:
-            bot.send_message(TARGET_GROUP_ID, "🚀 Hong Kong Bot Started & Connected Successfully!")
-            print("✅ Telegram Group Connection: SUCCESS")
-            tg_success = True
-            break
-        except Exception as e:
-            print(f"⚠️ Telegram Attempt {attempt+1} Failed: {e}")
-            time.sleep(3)
-    if not tg_success:
-        print("❌ Telegram Group Connection: FAILED after 3 attempts.")
-
-    headers = {'Authorization': f'Bearer {API_KEY}', 'Accept': 'application/json'}
-    api_success = False
-    for attempt in range(3):
-        try:
-            res = http_session.get(f"{API_BASE_URL}/messages", headers=headers, params={'per_page': 1}, timeout=15)
-            print(f"📡 API Status Code: {res.status_code}")
-            if res.status_code == 200:
-                print("✅ Augestel API Connection: SUCCESS")
-                api_success = True
-                break
-            else:
-                print(f"⚠️ API Attempt {attempt+1} Code: {res.status_code}")
-        except Exception as e:
-            print(f"⚠️ API Attempt {attempt+1} Failed -> {e}")
-        time.sleep(3)
-    if not api_success:
-        print("❌ Augestel API Connection: FAILED after 3 attempts.")
-    print("=" * 50)
+def send_stock_added_notification(country_flag, country_name, service_name, count):
+    msg = (
+        f"➖➖➖➖➖➖➖➖\n"
+        f"🆕 《 NEW NUMBERS HIGH TRAFIK 🔥》\n"
+        f"➖➖➖➖➖➖➖➖\n"
+        f"{country_flag} {country_name} 💚 {service_name}\n"
+        f"➖➖➖➖➖➖➖➖\n"
+        f"📤 Total Added: {count} ✅\n"
+        f"➖➖➖➖➖➖➖➖\n"
+        f"🚀 Use bot link to get your numbers! 👉"
+    )
+    markup = InlineKeyboardMarkup()
+    markup.add(InlineKeyboardButton(text="নাম্বার বট", url=BOT_USERNAME))
+    try:
+        bot.send_message(TARGET_GROUP_ID, msg, parse_mode="HTML", reply_markup=markup)
+    except Exception as e:
+        print(f"Stock notification error: {e}")
 
 @bot.message_handler(commands=['start'])
 def start_cmd(message):
@@ -191,19 +167,60 @@ def delete_all_stock_numbers(message):
 
 @bot.message_handler(func=lambda m: m.text == "➕ Add Number" and is_admin(m.chat.id))
 def add_num_prompt(message):
-    msg = bot.send_message(message.chat.id, "নম্বরগুলো এক বা একাধিক লাইনে / টেক্সট আকারে পাঠান:")
+    msg = bot.send_message(message.chat.id, "নম্বরগুলোর লিস্টসহ .txt ফাইল পাঠান অথবা মেসেজে টেক্সট আকারে পাঠান:")
     bot.register_next_step_handler(msg, process_add_number)
+
+@bot.message_handler(content_types=['document'])
+def handle_document(message):
+    if not is_admin(message.chat.id):
+        return
+    if message.document.file_name.endswith('.txt'):
+        try:
+            file_info = bot.get_file(message.document.file_id)
+            downloaded_file = bot.download_file(file_info.file_path)
+            file_text = downloaded_file.decode('utf-8')
+            
+            global added_numbers
+            raw_nums = re.findall(r'\+?\d{8,15}', file_text)
+            added_count = 0
+            sample_num = "8801700000000"
+            
+            for num in raw_nums:
+                clean_num = num.replace("+", "")
+                if clean_num not in added_numbers and clean_num not in used_numbers:
+                    added_numbers.append(clean_num)
+                    added_count += 1
+                    sample_num = clean_num
+                    
+            save_list_from_memory(STOCK_FILE, added_numbers)
+            
+            # কান্ট্রি ডিটেক্ট করে গ্রুপে নির্দিষ্ট ফরম্যাটে নোটিফিকেশন পাঠানো
+            flag, country_name = get_country_info(sample_num)
+            send_stock_added_notification(flag, country_name, "WHATSAPP", added_count)
+            
+            bot.send_message(message.chat.id, f"✅ ফাইল থেকে সফলভাবে {added_count} টি নম্বর স্টকে যুক্ত করা হয়েছে!\n📦 মোট স্টক: {len(added_numbers)}")
+        except Exception as e:
+            bot.send_message(message.chat.id, f"❌ ফাইল প্রসেস করতে সমস্যা হয়েছে: {e}")
 
 def process_add_number(message):
     global added_numbers
     raw_nums = re.findall(r'\+?\d{8,15}', message.text or "")
     added_count = 0
+    sample_num = "8801700000000"
+    
     for num in raw_nums:
         clean_num = num.replace("+", "")
         if clean_num not in added_numbers and clean_num not in used_numbers:
             added_numbers.append(clean_num)
             added_count += 1
+            sample_num = clean_num
+            
     save_list_from_memory(STOCK_FILE, added_numbers)
+    
+    if added_count > 0:
+        flag, country_name = get_country_info(sample_num)
+        send_stock_added_notification(flag, country_name, "WHATSAPP", added_count)
+        
     bot.send_message(message.chat.id, f"✅ সফলভাবে {added_count} টি নম্বর স্টকে যুক্ত করা হয়েছে!\n📦 মোট স্টক: {len(added_numbers)}")
 
 @bot.message_handler(func=lambda m: m.text == "📂 Get No-OTP File" and is_admin(m.chat.id))
@@ -227,7 +244,7 @@ def show_stats(message):
     )
     bot.send_message(message.chat.id, text, parse_mode="HTML")
 
-def build_assignment_keyboard(num1, service1, otp1, num2, service2, otp2):
+def build_assignment_keyboard(num1, otp1, num2, otp2):
     markup = InlineKeyboardMarkup()
     
     btn_num1 = InlineKeyboardButton(text=f"+{num1}", copy_text=CopyTextButton(text=f"+{num1}"))
@@ -238,8 +255,8 @@ def build_assignment_keyboard(num1, service1, otp1, num2, service2, otp2):
     text_otp2 = f"📋 {otp2}" if otp2 else "📋 ⏳ Waiting..."
     btn_otp2 = InlineKeyboardButton(text=text_otp2, copy_text=CopyTextButton(text=otp2 if otp2 else "Waiting"))
     
-    btn_bot = InlineKeyboardButton(text="Number Bot", url="https://t.me/Hong_Kong_TG_bot")
-    btn_channel = InlineKeyboardButton(text="Main Channel", url="https://t.me/facboo578")
+    btn_bot = InlineKeyboardButton(text="নাম্বার বট", url=BOT_USERNAME)
+    btn_channel = InlineKeyboardButton(text="Main Channel", url=MAIN_CHANNEL_URL)
     btn_change = InlineKeyboardButton(text="🔄 Change Number", callback_data="change_number_act")
     
     markup.add(btn_num1)
@@ -283,7 +300,7 @@ def send_number_panel(chat_id, edit_message_id=None):
     save_list_from_memory(STOCK_FILE, added_numbers)
     
     text = f"📦 <b>Available Stock:</b> {len(added_numbers)}\n👇 Copy Number/OTP below:"
-    markup = build_assignment_keyboard(num1, "OTP", None, num2, "OTP", None)
+    markup = build_assignment_keyboard(num1, None, num2, None)
 
     if edit_message_id:
         try:
@@ -296,26 +313,19 @@ def send_number_panel(chat_id, edit_message_id=None):
         sent_msg = bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=markup)
         msg_id = sent_msg.message_id
 
-    active_assignments[num1] = {"chat_id": chat_id, "message_id": msg_id, "slot": 1, "pair": num2, "otp": None, "service": "OTP"}
-    active_assignments[num2] = {"chat_id": chat_id, "message_id": msg_id, "slot": 2, "pair": num1, "otp": None, "service": "OTP"}
+    active_assignments[num1] = {"chat_id": chat_id, "message_id": msg_id, "slot": 1, "pair": num2, "otp": None}
+    active_assignments[num2] = {"chat_id": chat_id, "message_id": msg_id, "slot": 2, "pair": num1, "otp": None}
 
-def fetch_from_augestel_api():
+def fetch_from_augestel_api(is_startup=False):
     url = f"{API_BASE_URL}/messages"
     headers = {
         'Authorization': f'Bearer {API_KEY}',
         'Accept': 'application/json'
     }
-    params = {'per_page': 5, 'page': 1}
+    params = {'per_page': 10, 'page': 1}
     
     try:
         res = http_session.get(url, headers=headers, params=params, timeout=15)
-        
-        if res.status_code == 429:
-            retry_after = int(res.headers.get("Retry-After", 20))
-            print(f"⚠️ Rate limit hit (429). Pausing for {retry_after} seconds...")
-            time.sleep(retry_after)
-            return
-
         if res.status_code != 200:
             return
         
@@ -326,6 +336,9 @@ def fetch_from_augestel_api():
         records = response_data.get("data", [])
         if isinstance(records, list):
             records.reverse()
+
+        if is_startup:
+            records = records[-5:]
 
         for item in records:
             if not isinstance(item, dict):
@@ -346,12 +359,7 @@ def fetch_from_augestel_api():
             if clean_num not in used_numbers:
                 used_numbers.add(clean_num)
                 append_to_file_safe(USED_FILE, clean_num)
-                
-            if clean_num in no_otp_numbers:
-                no_otp_numbers.remove(clean_num)
-                save_list_from_memory(NO_OTP_FILE, list(no_otp_numbers))
 
-            # নম্বর দেখে সঠিক ফ্ল্যাগ ও কান্ট্রি কোড সেট করা
             flag, country_code = get_country_info(clean_num)
             formatted_rabbi_num = format_group_number_with_rabbi(clean_num)
             
@@ -359,50 +367,30 @@ def fetch_from_augestel_api():
             
             markup = InlineKeyboardMarkup()
             copy_btn = InlineKeyboardButton(text=f"📋 {otp_code}", copy_text=CopyTextButton(text=str(otp_code)))
-            btn_bot = InlineKeyboardButton(text="Number Bot", url=BOT_USERNAME)
-            btn_channel = InlineKeyboardButton(text="Main Channel", url="https://t.me/facboo578")
+            btn_bot = InlineKeyboardButton(text="নাম্বার বট", url=BOT_USERNAME)
+            btn_channel = InlineKeyboardButton(text="Main Channel", url=MAIN_CHANNEL_URL)
             
             markup.add(copy_btn)
             markup.add(btn_bot, btn_channel)
 
-            try:
-                bot.send_message(TARGET_GROUP_ID, group_msg, parse_mode="HTML", reply_markup=markup)
-            except Exception as e:
-                print(f"Group send error: {e}")
-
-            if clean_num in active_assignments:
-                info = active_assignments[clean_num]
-                info["otp"] = otp_code
-                info["service"] = service_name
-                pair_num = info["pair"]
-                
-                pair_info = active_assignments.get(pair_num) or historical_assignments.get(pair_num)
-                pair_otp = pair_info["otp"] if pair_info else None
-                pair_srv = pair_info["service"] if pair_info else "OTP"
-                
-                n1, s1, o1 = (clean_num, service_name, otp_code) if info["slot"] == 1 else (pair_num, pair_srv, pair_otp)
-                n2, s2, o2 = (pair_num, pair_srv, pair_otp) if info["slot"] == 1 else (clean_num, service_name, otp_code)
-
-                new_markup = build_assignment_keyboard(n1, s1, o1, n2, s2, o2)
+            if not is_startup:
                 try:
-                    bot.edit_message_reply_markup(chat_id=info["chat_id"], message_id=info["message_id"], reply_markup=new_markup)
-                except:
-                    pass
+                    bot.send_message(TARGET_GROUP_ID, group_msg, parse_mode="HTML", reply_markup=markup)
+                except Exception as e:
+                    print(f"Group send error: {e}")
 
-            elif clean_num in historical_assignments:
-                info = historical_assignments[clean_num]
+            if clean_num in active_assignments or clean_num in historical_assignments:
+                info = active_assignments.get(clean_num) or historical_assignments.get(clean_num)
                 info["otp"] = otp_code
-                info["service"] = service_name
                 pair_num = info["pair"]
                 
                 pair_info = active_assignments.get(pair_num) or historical_assignments.get(pair_num)
                 pair_otp = pair_info["otp"] if pair_info else None
-                pair_srv = pair_info["service"] if pair_info else "OTP"
                 
-                n1, s1, o1 = (clean_num, service_name, otp_code) if info["slot"] == 1 else (pair_num, pair_srv, pair_otp)
-                n2, s2, o2 = (pair_num, pair_srv, pair_otp) if info["slot"] == 1 else (clean_num, service_name, otp_code)
+                n1, o1 = (clean_num, otp_code) if info["slot"] == 1 else (pair_num, pair_otp)
+                n2, o2 = (pair_num, pair_otp) if info["slot"] == 1 else (clean_num, otp_code)
 
-                new_markup = build_assignment_keyboard(n1, s1, o1, n2, s2, o2)
+                new_markup = build_assignment_keyboard(n1, o1, n2, o2)
                 try:
                     bot.edit_message_reply_markup(chat_id=info["chat_id"], message_id=info["message_id"], reply_markup=new_markup)
                 except:
@@ -414,15 +402,15 @@ def fetch_from_augestel_api():
         print(f"API fetch error: {e}")
 
 def background_worker():
-    time.sleep(5)
+    fetch_from_augestel_api(is_startup=True)
+    print("🚀 Bot started and processed last 5 old OTPs successfully!")
     while True:
-        fetch_from_augestel_api()
+        fetch_from_augestel_api(is_startup=False)
         if len(processed_ids) > 6000:
             processed_ids.clear()
         time.sleep(20)
 
 if __name__ == "__main__":
-    run_startup_tests()
     t = threading.Thread(target=background_worker, daemon=True)
     t.start()
     bot.infinity_polling()
