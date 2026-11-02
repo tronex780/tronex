@@ -1,4 +1,3 @@
-cat << 'EOF' > bot.py
 import telebot
 from telebot import types
 from telebot.types import InlineKeyboardButton, InlineKeyboardMarkup, CopyTextButton
