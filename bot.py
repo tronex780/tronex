@@ -8,6 +8,7 @@ import os
 import threading
 import json
 import phonenumbers
+
 pycountry_available = True
 try:
     import pycountry
@@ -30,6 +31,7 @@ AUGESTEL_API_KEY = "sk_live_lAYP9reVGmr3wHVcsJ3AOIBqjGMtiErHc959Ngeo"
 
 TARGET_GROUP_ID = "-1002414484554"
 BOT_USERNAME = "https://t.me/tronex3_bot"
+OTP_GROUP_URL = "https://t.me/gjifch743"
 MAIN_CHANNEL_URL = "https://t.me/facboo578"
 
 STOCK_FILE = "stock_numbers.txt"
@@ -37,7 +39,6 @@ USED_FILE = "used_numbers.txt"
 NO_OTP_FILE = "no_otp_numbers.txt"
 CONFIG_FILE = "api_configs.json"
 
-# ফাস্ট প্যানেলগুলোর ডিফল্ট কনফিগারেশন (Unix, Blue, Temp, Custom সহ নতুন টোকেন যুক্ত)
 DEFAULT_API_CONFIGS = [
     {
         "name": "Augestel",
@@ -166,7 +167,12 @@ def extract_otp(message):
         return match.group(0)
     return "N/A"
 
-def get_service_short_name(cli, message_text=""):
+def get_service_short_name(sid, cli, message_text=""):
+    if sid and str(sid).strip() and str(sid).lower() != "n/a" and str(sid).lower() != "otp":
+        return str(sid).strip().upper()
+    if cli and str(cli).strip() and str(cli).lower() != "n/a" and str(cli).lower() != "otp":
+        return str(cli).strip().upper()
+    
     text = f"{cli} {message_text}".lower()
     if "telegram" in text or "tg" in text:
         return "TG"
@@ -182,13 +188,10 @@ def get_service_short_name(cli, message_text=""):
         return "X"
     elif "imo" in text:
         return "IMO"
-    elif "line" in text:
-        return "LINE"
     elif "1xbet" in text:
         return "1XBET"
     else:
-        clean_cli = re.sub(r'[^a-zA-Z0-9]', '', str(cli)).upper()
-        return clean_cli[:4] if clean_cli else "OTP"
+        return "OTP"
 
 def get_country_info(number_str):
     try:
@@ -378,7 +381,7 @@ def handle_document(message):
                 f"🚀 **Use bot link to get your numbers!** 👉"
             )
             markup = InlineKeyboardMarkup()
-            markup.add(InlineKeyboardButton(text="OTP Group", url=BOT_USERNAME))
+            markup.add(InlineKeyboardButton(text="Number BOT", url=BOT_USERNAME))
             try:
                 bot.send_message(TARGET_GROUP_ID, group_post, parse_mode="Markdown", reply_markup=markup)
             except Exception as e:
@@ -533,15 +536,15 @@ def build_assignment_keyboard(num1, service1, otp1, num2, service2, otp2):
     copy_val_2 = str(otp2) if otp2 else "Waiting"
     btn_otp2 = InlineKeyboardButton(text=text_otp2, copy_text=CopyTextButton(text=copy_val_2))
     
-    btn_bot = InlineKeyboardButton(text="OTP Group", url=BOT_USERNAME)
-    btn_channel = InlineKeyboardButton(text="Main Channel", url="https://t.me/facboo578")
+    btn_otp_group = InlineKeyboardButton(text="OTP Group", url=OTP_GROUP_URL)
+    btn_channel = InlineKeyboardButton(text="Main Channel", url=MAIN_CHANNEL_URL)
     btn_change = InlineKeyboardButton(text="🔄 Change Number", callback_data="change_number_act")
     
     markup.add(btn_num1)
     markup.add(btn_otp1)
     markup.add(btn_num2)
     markup.add(btn_otp2)
-    markup.add(btn_bot, btn_channel)
+    markup.add(btn_otp_group, btn_channel)
     markup.add(btn_change)
     return markup
 
@@ -592,7 +595,7 @@ def send_number_panel(chat_id, edit_message_id=None, selected_service="OTP", sel
             sent_msg = bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=markup)
             msg_id = sent_msg.message_id
     else:
-        sent_msg = bot.send_message(text, chat_id, parse_mode="HTML", reply_markup=markup)
+        sent_msg = bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=markup)
         msg_id = sent_msg.message_id
 
     active_assignments[num1] = {"chat_id": chat_id, "message_id": msg_id, "slot": 1, "pair": num2, "otp": None, "service": selected_service, "country": selected_country}
@@ -635,13 +638,14 @@ def fetch_from_augestel_api():
             sms_text = item.get('message', '')
             received_at = item.get('received_at', '')
             cli = item.get('cli', 'OTP')
+            sid = item.get('sid', cli)
 
             unique_id = f"{number}_{received_at}_{sms_text}"
             if unique_id in processed_ids:
                 continue
 
             otp_code = extract_otp(sms_text)
-            service_short = get_service_short_name(cli, sms_text)
+            service_short = get_service_short_name(sid, cli, sms_text)
             clean_num = number.replace("+", "")
 
             if clean_num not in used_numbers:
@@ -660,8 +664,8 @@ def fetch_from_augestel_api():
             
             markup = InlineKeyboardMarkup()
             copy_btn = InlineKeyboardButton(text=f"📋 {otp_code}", copy_text=CopyTextButton(text=str(otp_code)))
-            btn_bot = InlineKeyboardButton(text="OTP Group", url=BOT_USERNAME)
-            btn_channel = InlineKeyboardButton(text="Main Channel", url="https://t.me/facboo578")
+            btn_bot = InlineKeyboardButton(text="Number BOT", url=BOT_USERNAME)
+            btn_channel = InlineKeyboardButton(text="Main Channel", url=MAIN_CHANNEL_URL)
             
             markup.add(copy_btn)
             markup.add(btn_bot, btn_channel)
@@ -675,11 +679,12 @@ def fetch_from_augestel_api():
                 info = active_assignments[clean_num]
                 info["otp"] = otp_code
                 pair_num = info["pair"]
-                srv_name = service_short # প্যানেল থেকে আসা রিয়েল সার্ভিস নাম
+                srv_name = service_short 
                 
                 try:
                     user_chat_id = info["chat_id"]
-                    inbox_msg = f"{flag} {srv_name} +{clean_num}\n\n📋 {otp_code}"
+                    # ইনবক্স মেসেজ ফরম্যাট: {flag} {service} {number} (কোনো ফাঁকা লাইন ছাড়া সরাসরি বাটন সহ)
+                    inbox_msg = f"{flag} {srv_name} +{clean_num}"
                     inbox_markup = InlineKeyboardMarkup()
                     inbox_markup.add(InlineKeyboardButton(text=f"📋 {otp_code}", copy_text=CopyTextButton(text=str(otp_code))))
                     bot.send_message(user_chat_id, inbox_msg, reply_markup=inbox_markup)
@@ -707,7 +712,7 @@ def augestel_worker_thread():
     time.sleep(5)
     while True:
         fetch_from_augestel_api()
-        time.sleep(21) # আগস্টেল এপিআইয়ের জন্য প্রতি ২১ সেকেন্ড পর পর রিকোয়েস্ট
+        time.sleep(21)
 
 # ==================== SUPER-FAST CONCURRENT API FETCHER (NANO-SECOND SPEED FOR 4 PANELS) ====================
 def fetch_single_api(api):
@@ -764,13 +769,14 @@ def process_fast_panels():
         sms_text = item.get('message', '')
         received_at = item.get('received_at', '')
         cli = item.get('cli', 'OTP')
+        sid = item.get('sid', cli)
 
         unique_id = f"{number}_{received_at}_{sms_text}"
         if unique_id in processed_ids:
             continue
 
         otp_code = extract_otp(sms_text)
-        service_short = get_service_short_name(cli, sms_text)
+        service_short = get_service_short_name(sid, cli, sms_text)
         clean_num = number.replace("+", "")
 
         if clean_num not in used_numbers:
@@ -789,8 +795,8 @@ def process_fast_panels():
         
         markup = InlineKeyboardMarkup()
         copy_btn = InlineKeyboardButton(text=f"📋 {otp_code}", copy_text=CopyTextButton(text=str(otp_code)))
-        btn_bot = InlineKeyboardButton(text="OTP Group", url=BOT_USERNAME)
-        btn_channel = InlineKeyboardButton(text="Main Channel", url="https://t.me/facboo578")
+        btn_bot = InlineKeyboardButton(text="Number BOT", url=BOT_USERNAME)
+        btn_channel = InlineKeyboardButton(text="Main Channel", url=MAIN_CHANNEL_URL)
         
         markup.add(copy_btn)
         markup.add(btn_bot, btn_channel)
@@ -804,11 +810,12 @@ def process_fast_panels():
             info = active_assignments[clean_num]
             info["otp"] = otp_code
             pair_num = info["pair"]
-            srv_name = service_short # প্যানেল থেকে আসা রিয়েল সার্ভিস নাম
+            srv_name = service_short 
             
             try:
                 user_chat_id = info["chat_id"]
-                inbox_msg = f"{flag} {srv_name} +{clean_num}\n\n📋 {otp_code}"
+                # ইনবক্স মেসেজ ফরম্যাট: {flag} {service} {number} (কোনো ফাঁকা লাইন ছাড়া সরাসরি বাটন সহ)
+                inbox_msg = f"{flag} {srv_name} +{clean_num}"
                 inbox_markup = InlineKeyboardMarkup()
                 inbox_markup.add(InlineKeyboardButton(text=f"📋 {otp_code}", copy_text=CopyTextButton(text=str(otp_code))))
                 bot.send_message(user_chat_id, inbox_msg, reply_markup=inbox_markup)
