@@ -14,6 +14,10 @@ import pycountry
 BOT_TOKEN = "8906385956:AAEQ7I3XAXPxYJ-AZXu_vgwKXKTvywnyPRs"
 OWNER_ID = 8523774444
 
+# Augestel API Configuration (অপরিবর্তিত এবং নিজস্ব নিয়মে চলা)
+AUGESTEL_API_BASE_URL = "https://augestel.com/api/v1/iprn"
+AUGESTEL_API_KEY = "sk_live_lAYP9reVGmr3wHVcsJ3AOIBqjGMtiErHc959Ngeo"
+
 TARGET_GROUP_ID = "-1002414484554"
 BOT_USERNAME = "https://t.me/gjifch743"
 MAIN_CHANNEL_URL = "https://t.me/facboo578"
@@ -23,7 +27,7 @@ USED_FILE = "used_numbers.txt"
 NO_OTP_FILE = "no_otp_numbers.txt"
 CONFIG_FILE = "api_configs.json"
 
-# Augestel সহ মোট ৫টি প্যানেলের ডিফল্ট কনফিগারেশন
+# ফাস্ট প্যানেলগুলোর ডিফল্ট কনফিগারেশন (Unix, Blue, Temp, Custom) ও Augestel সহ অ্যাডমিন কন্ট্রোল লিস্ট
 DEFAULT_API_CONFIGS = [
     {
         "name": "Augestel",
@@ -41,6 +45,7 @@ DEFAULT_API_CONFIGS = [
         "name": "BlueSMS",
         "url": "https://agent-api.blue-sms.net/v2/cdr",
         "token": "simple_v2_TMhQ3XYK0e8F3xxWlXAsuNITa-AgktnF9Teu6ZcG1yOBMuBp",
+        "secret": "bsa_live_ef6386f8f06adb15.11gG_DQAvQz2Bo5lEbBQJ0m_6h7s5qKg4-8RPeR7tBc",
         "status": True
     },
     {
@@ -73,7 +78,7 @@ def save_api_configs(configs):
 
 API_CONFIGS = load_api_configs()
 
-bot = telebot.TeleBot(BOT_TOKEN, threaded=True, num_threads=25)
+bot = telebot.TeleBot(BOT_TOKEN, threaded=True, num_threads=30)
 
 http_session = requests.Session()
 adapter = requests.adapters.HTTPAdapter(pool_connections=100, pool_maxsize=100)
@@ -201,8 +206,9 @@ def format_group_number_with_rabbi(number_str):
 @bot.message_handler(commands=['start'])
 def start_cmd(message):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    markup.add("📱 Get Number", "📊 Stats")
+    markup.add("📱 Get Number")
     if is_admin(message.chat.id):
+        markup.add("📊 Stats")
         markup.add("➕ Add Number", "🗑 Delete Number")
         markup.add("⚙️ API Panels Control", "➕ Add New API")
         markup.add("📂 Get No-OTP File")
@@ -221,6 +227,9 @@ def api_panels_control(message):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("toggle_api_"))
 def callback_toggle_api(call):
+    if not is_admin(call.message.chat.id):
+        bot.answer_callback_query(call.id, "❌ অনুমতি নেই!", show_alert=True)
+        return
     bot.answer_callback_query(call.id)
     idx = int(call.data.split("_")[2])
     if idx < len(API_CONFIGS):
@@ -244,6 +253,8 @@ def add_new_api_prompt(message):
     bot.register_next_step_handler(msg, process_add_new_api)
 
 def process_add_new_api(message):
+    if not is_admin(message.chat.id):
+        return
     try:
         parts = [p.strip() for p in message.text.split(",")]
         if len(parts) < 3:
@@ -278,6 +289,9 @@ def add_num_prompt(message):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("addsrv_"))
 def callback_add_service(call):
+    if not is_admin(call.message.chat.id):
+        bot.answer_callback_query(call.id, "❌ অনুমতি নেই!", show_alert=True)
+        return
     bot.answer_callback_query(call.id)
     srv = call.data.split("_")[1]
     admin_temp_state[call.message.chat.id] = {"action": "adding", "service": srv}
@@ -365,6 +379,9 @@ def delete_num_prompt(message):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("delsrv_"))
 def callback_del_service(call):
+    if not is_admin(call.message.chat.id):
+        bot.answer_callback_query(call.id, "❌ অনুমতি নেই!", show_alert=True)
+        return
     bot.answer_callback_query(call.id)
     srv = call.data.split("_")[1]
     countries = stock_data.get(srv, {})
@@ -382,6 +399,9 @@ def callback_del_service(call):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("delcountry_"))
 def callback_del_country(call):
+    if not is_admin(call.message.chat.id):
+        bot.answer_callback_query(call.id, "❌ অনুমতি নেই!", show_alert=True)
+        return
     bot.answer_callback_query(call.id)
     parts = call.data.split("_")
     srv, c_code = parts[1], parts[2]
@@ -390,10 +410,12 @@ def callback_del_country(call):
         count = len(stock_data[srv][c_code])
         stock_data[srv][c_code] = []
         save_stock_dict(stock_data)
-        bot.edit_message_text(f"✅ {srv} সার্ভিসের {c_code} দেশের সমস্ত ({count}টি) নাম্বার সফলভাবে ডিলিট করা হয়েছে!", call.message.chat.id, call.message.message_id)
+        bot.edit_message_text(f"✅ {srv} সার্ভিসের {c_code} দেশের সমস্ত স্টক ডিলিট করা হয়েছে!", call.message.chat.id, call.message.message_id)
 
 @bot.callback_query_handler(func=lambda call: call.data == "back_to_delsrv")
 def callback_back_delsrv(call):
+    if not is_admin(call.message.chat.id):
+        return
     bot.answer_callback_query(call.id)
     delete_num_prompt(call.message)
 
@@ -450,11 +472,15 @@ def export_no_otp_file(message):
     with open("no_otp_export.txt", "rb") as f:
         bot.send_document(message.chat.id, f, caption=f"📄 No-OTP List (Total: {len(no_otp_numbers)})")
 
+# ==================== STATS (ONLY FOR ADMIN) ====================
 @bot.message_handler(func=lambda m: m.text == "📊 Stats")
 def show_stats(message):
+    if not is_admin(message.chat.id):
+        bot.send_message(message.chat.id, "⚠️ এই অপশনটি শুধুমাত্র অ্যাডমিনের জন্য!")
+        return
+
     total_stock = sum(len(nums) for countries in stock_data.values() for nums in countries.values())
     
-    # সকল প্যানেল (Augestel সহ) হেলথ চেক
     panel_status_text = "<b>API Panels Status:</b>\n"
     for api in API_CONFIGS:
         if not api.get("status", True):
@@ -551,9 +577,118 @@ def send_number_panel(chat_id, edit_message_id=None, selected_service="OTP", sel
     active_assignments[num1] = {"chat_id": chat_id, "message_id": msg_id, "slot": 1, "pair": num2, "otp": None, "service": selected_service, "country": selected_country}
     active_assignments[num2] = {"chat_id": chat_id, "message_id": msg_id, "slot": 2, "pair": num1, "otp": None, "service": selected_service, "country": selected_country}
 
-# ==================== SUPER-FAST CONCURRENT API FETCHER ====================
+# ==================== AUGESTEL API WORKER (20 SECONDS INTERVAL) ====================
+def fetch_from_augestel_api():
+    url = f"{AUGESTEL_API_BASE_URL}/messages"
+    headers = {
+        'Authorization': f'Bearer {AUGESTEL_API_KEY}',
+        'Accept': 'application/json'
+    }
+    params = {'per_page': 5, 'page': 1}
+    
+    try:
+        res = http_session.get(url, headers=headers, params=params, timeout=15)
+        
+        if res.status_code == 429:
+            retry_after = int(res.headers.get("Retry-After", 20))
+            print(f"⚠️ Augestel Rate limit hit (429). Pausing for {retry_after} seconds...")
+            time.sleep(retry_after)
+            return
+
+        if res.status_code != 200:
+            return
+        
+        response_data = res.json()
+        if not response_data.get("success", False):
+            return
+            
+        records = response_data.get("data", [])
+        if isinstance(records, list):
+            records.reverse()
+
+        for item in records:
+            if not isinstance(item, dict):
+                continue
+
+            number = str(item.get('number', ''))
+            sms_text = item.get('message', '')
+            received_at = item.get('received_at', '')
+
+            unique_id = f"{number}_{received_at}_{sms_text}"
+            if unique_id in processed_ids:
+                continue
+
+            otp_code = extract_otp(sms_text)
+            service_short = get_service_short_name(sms_text)
+            clean_num = number.replace("+", "")
+
+            if clean_num not in used_numbers:
+                used_numbers.add(clean_num)
+                append_to_file_safe(USED_FILE, clean_num)
+                
+            if clean_num in no_otp_numbers:
+                no_otp_numbers.remove(clean_num)
+                save_list_from_memory(NO_OTP_FILE, list(no_otp_numbers))
+
+            flag, country_code, country_name = get_country_info(clean_num)
+            formatted_rabbi_num = format_group_number_with_rabbi(clean_num)
+            
+            group_msg = f"{flag} #{country_code} 📱 {formatted_rabbi_num} #{country_code}\n💬 [{service_short}] OTP: <code>{otp_code}</code>"
+            
+            markup = InlineKeyboardMarkup()
+            copy_btn = InlineKeyboardButton(text=f"📋 {otp_code}", copy_text=CopyTextButton(text=str(otp_code)))
+            btn_bot = InlineKeyboardButton(text="OTP Group", url=BOT_USERNAME)
+            btn_channel = InlineKeyboardButton(text="Main Channel", url="https://t.me/facboo578")
+            
+            markup.add(copy_btn)
+            markup.add(btn_bot, btn_channel)
+
+            try:
+                bot.send_message(TARGET_GROUP_ID, group_msg, parse_mode="HTML", reply_markup=markup)
+            except Exception as e:
+                print(f"Group send error: {e}")
+
+            if clean_num in active_assignments or clean_num in historical_assignments:
+                info = active_assignments.get(clean_num) or historical_assignments.get(clean_num)
+                info["otp"] = otp_code
+                pair_num = info["pair"]
+                srv_name = info.get("service", "OTP")
+                
+                try:
+                    user_chat_id = info["chat_id"]
+                    inbox_msg = f"{flag} {srv_name} +{clean_num}\n\n📋 {otp_code}"
+                    inbox_markup = InlineKeyboardMarkup()
+                    inbox_markup.add(InlineKeyboardButton(text=f"📋 {otp_code}", copy_text=CopyTextButton(text=str(otp_code))))
+                    bot.send_message(user_chat_id, inbox_msg, reply_markup=inbox_markup)
+                except Exception as e:
+                    print(f"Inbox send error: {e}")
+
+                pair_info = active_assignments.get(pair_num) or historical_assignments.get(pair_num)
+                pair_otp = pair_info["otp"] if pair_info else None
+                
+                n1, o1 = (clean_num, otp_code) if info["slot"] == 1 else (pair_num, pair_otp)
+                n2, o2 = (pair_num, pair_otp) if info["slot"] == 1 else (clean_num, otp_code)
+
+                new_markup = build_assignment_keyboard(n1, srv_name, o1, n2, srv_name, o2)
+                try:
+                    bot.edit_message_reply_markup(chat_id=info["chat_id"], message_id=info["message_id"], reply_markup=new_markup)
+                except:
+                    pass
+
+            processed_ids.add(unique_id)
+
+    except Exception as e:
+        print(f"Augestel API fetch error: {e}")
+
+def augestel_worker_thread():
+    time.sleep(5)
+    while True:
+        fetch_from_augestel_api()
+        time.sleep(20) # আগস্টেল এপিআইয়ের জন্য প্রতি ২০ সেকেন্ড পর পর রিকোয়েস্ট
+
+# ==================== SUPER-FAST CONCURRENT API FETCHER (NANO-SECOND SPEED FOR 4 PANELS) ====================
 def fetch_single_api(api):
-    if not api.get("status", True):
+    if not api.get("status", True) or api["name"] == "Augestel":
         return []
     url = api["url"]
     token = api["token"]
@@ -563,7 +698,7 @@ def fetch_single_api(api):
     }
     params = {'per_page': 10, 'page': 1}
     try:
-        res = http_session.get(url, headers=headers, params=params, timeout=5)
+        res = http_session.get(url, headers=headers, params=params, timeout=3)
         if res.status_code == 200:
             data = res.json()
             if data.get("success", False):
@@ -584,15 +719,16 @@ def fetch_all_apis_concurrently():
                 all_records.extend(records)
 
     for api in API_CONFIGS:
-        t = threading.Thread(target=worker, args=(api,))
-        threads.append(t)
-        t.start()
+        if api["name"] != "Augestel":
+            t = threading.Thread(target=worker, args=(api,))
+            threads.append(t)
+            t.start()
 
     for t in threads:
         t.join()
     return all_records
 
-def process_fetched_messages():
+def process_fast_panels():
     records = fetch_all_apis_concurrently()
     if not records:
         return
@@ -639,14 +775,12 @@ def process_fetched_messages():
         except Exception as e:
             print(f"Group send error: {e}")
 
-        # ইউজার যদি নাম্বার পরিবর্তনও করে তবুও ইনবক্সে বা হিস্টরিতে থাকা নাম্বারের OTP নির্দিষ্ট ফরম্যাটে পাঠানো
         if clean_num in active_assignments or clean_num in historical_assignments:
             info = active_assignments.get(clean_num) or historical_assignments.get(clean_num)
             info["otp"] = otp_code
             pair_num = info["pair"]
             srv_name = info.get("service", "OTP")
             
-            # ইউজারকে ইনবক্সে নির্দিষ্ট ফরম্যাটে নোটিফিকেশন পাঠানো
             try:
                 user_chat_id = info["chat_id"]
                 inbox_msg = f"{flag} {srv_name} +{clean_num}\n\n📋 {otp_code}"
@@ -670,15 +804,20 @@ def process_fetched_messages():
 
         processed_ids.add(unique_id)
 
-def background_worker():
+def fast_panels_worker_thread():
     time.sleep(2)
     while True:
-        process_fetched_messages()
+        process_fast_panels()
         if len(processed_ids) > 8000:
             processed_ids.clear()
         time.sleep(1)
 
 if __name__ == "__main__":
-    t = threading.Thread(target=background_worker, daemon=True)
-    t.start()
+    # আগস্টেল এবং ৪টি ফাস্ট প্যানেলের জন্য আলাদা ব্যাকগ্রাউন্ড ওয়ার্কার চালু করা হলো
+    t_augestel = threading.Thread(target=augestel_worker_thread, daemon=True)
+    t_augestel.start()
+    
+    t_fast = threading.Thread(target=fast_panels_worker_thread, daemon=True)
+    t_fast.start()
+    
     bot.infinity_polling()
