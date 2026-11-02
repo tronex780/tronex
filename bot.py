@@ -8,18 +8,28 @@ import os
 import threading
 import json
 import phonenumbers
-import pycountry
+pycountry_available = True
+try:
+    import pycountry
+except ImportError:
+    pycountry_available = False
+
+langdetect_available = True
+try:
+    from langdetect import detect
+except ImportError:
+    langdetect_available = False
 
 # ==================== CONFIGURATION ====================
 BOT_TOKEN = "8906385956:AAEQ7I3XAXPxYJ-AZXu_vgwKXKTvywnyPRs"
 OWNER_ID = 8523774444
 
-# Augestel API Configuration (অপরিবর্তিত এবং নিজস্ব নিয়মে চলা)
+# Augestel API Configuration (প্রতি ২১ সেকেন্ড পর পর রিকোয়েস্ট)
 AUGESTEL_API_BASE_URL = "https://augestel.com/api/v1/iprn"
 AUGESTEL_API_KEY = "sk_live_lAYP9reVGmr3wHVcsJ3AOIBqjGMtiErHc959Ngeo"
 
 TARGET_GROUP_ID = "-1002414484554"
-BOT_USERNAME = "https://t.me/gjifch743"
+BOT_USERNAME = "https://t.me/tronex3_bot"
 MAIN_CHANNEL_URL = "https://t.me/facboo578"
 
 STOCK_FILE = "stock_numbers.txt"
@@ -27,7 +37,7 @@ USED_FILE = "used_numbers.txt"
 NO_OTP_FILE = "no_otp_numbers.txt"
 CONFIG_FILE = "api_configs.json"
 
-# ফাস্ট প্যানেলগুলোর ডিফল্ট কনফিগারেশন (Unix, Blue, Temp, Custom) ও Augestel সহ অ্যাডমিন কন্ট্রোল লিস্ট
+# ফাস্ট প্যানেলগুলোর ডিফল্ট কনফিগারেশন (Unix, Blue, Temp, Custom সহ নতুন টোকেন যুক্ত)
 DEFAULT_API_CONFIGS = [
     {
         "name": "Augestel",
@@ -38,14 +48,15 @@ DEFAULT_API_CONFIGS = [
     {
         "name": "UnixSMS",
         "url": "https://agent-api.unixsms.com/v2/cdr",
-        "token": "simple_v2_IgE7OEF0mKW9-B1-XnFtk6ogDRpVp0MZrEY0VPpahx8a0tTO",
+        "token": "simple_v2_F0gT6P6u3CuxH3usCPpXdqPgWZi-eMqs71EdFg4Y7vI5JkiI",
+        "secret": "bsa_live_7ab7c960821b1fb4._GxjU3vsLffP5i7t7glutFWmINvKfHAgJ8BYr027hqE",
         "status": True
     },
     {
         "name": "BlueSMS",
         "url": "https://agent-api.blue-sms.net/v2/cdr",
         "token": "simple_v2_TMhQ3XYK0e8F3xxWlXAsuNITa-AgktnF9Teu6ZcG1yOBMuBp",
-        "secret": "bsa_live_ef6386f8f06adb15.11gG_DQAvQz2Bo5lEbBQJ0m_6h7s5qKg4-8RPeR7tBc",
+        "secret": "bsa_live_538758a5a93d94bb.haifpcIRPbUI9Dj6TkMrmEq_2MAyTgLETY_udik6hz4",
         "status": True
     },
     {
@@ -100,7 +111,7 @@ def load_stock_dict():
             num = parts[0].replace("+", "").strip()
             srv = parts[1].upper().strip() if len(parts) > 1 else "OTP"
             
-            _, c_code, _ = get_country_info(num)
+            _, c_code = get_country_info(num)
             
             if srv not in stock_dict:
                 stock_dict[srv] = {}
@@ -155,26 +166,29 @@ def extract_otp(message):
         return match.group(0)
     return "N/A"
 
-def get_service_short_name(message_text):
-    text_lower = message_text.lower()
-    if "telegram" in text_lower or "tg" in text_lower:
+def get_service_short_name(cli, message_text=""):
+    text = f"{cli} {message_text}".lower()
+    if "telegram" in text or "tg" in text:
         return "TG"
-    elif "instagram" in text_lower or "ig" in text_lower:
+    elif "instagram" in text or "ig" in text:
         return "IG"
-    elif "whatsapp" in text_lower or "wa" in text_lower:
+    elif "whatsapp" in text or "wa" in text:
         return "WA"
-    elif "google" in text_lower or "gmail" in text_lower:
+    elif "google" in text or "gmail" in text:
         return "GG"
-    elif "facebook" in text_lower or "fb" in text_lower:
+    elif "facebook" in text or "fb" in text:
         return "FB"
-    elif "twitter" in text_lower or "x.com" in text_lower:
+    elif "twitter" in text or "x.com" in text:
         return "X"
-    elif "imo" in text_lower:
+    elif "imo" in text:
         return "IMO"
-    elif "line" in text_lower:
+    elif "line" in text:
         return "LINE"
+    elif "1xbet" in text:
+        return "1XBET"
     else:
-        return "OTP"
+        clean_cli = re.sub(r'[^a-zA-Z0-9]', '', str(cli)).upper()
+        return clean_cli[:4] if clean_cli else "OTP"
 
 def get_country_info(number_str):
     try:
@@ -186,14 +200,21 @@ def get_country_info(number_str):
         country_code = phonenumbers.region_code_for_number(parsed)
         
         if country_code:
-            country = pycountry.countries.get(alpha_2=country_code)
-            country_name = country.name.upper() if country else "GLOBAL"
             flag = "".join(chr(127397 + ord(c)) for c in country_code.upper())
-            return flag, country_code, country_name
+            return flag, country_code
         else:
-            return "🌐", "GLOBAL", "GLOBAL"
+            return "🌐", "GLOBAL"
     except Exception:
-        return "🌐", "GLOBAL", "GLOBAL"
+        return "🌐", "GLOBAL"
+
+def detect_sms_language(text):
+    if not langdetect_available:
+        return "EN"
+    try:
+        lang = detect(text).upper()
+        return lang[:2]
+    except:
+        return "EN"
 
 def format_group_number_with_rabbi(number_str):
     clean = re.sub(r'\D', '', number_str)
@@ -328,7 +349,7 @@ def handle_document(message):
                 if not sample_num:
                     sample_num = num
                 
-                flag, c_code, _ = get_country_info(num)
+                _, c_code = get_country_info(num)
                 if srv not in stock_data:
                     stock_data[srv] = {}
                 if c_code not in stock_data[srv]:
@@ -344,13 +365,13 @@ def handle_document(message):
         bot.send_message(message.chat.id, f"✅ সফলভাবে {added_count} টি নাম্বার {srv} সার্ভিসে স্টকে যুক্ত করা হয়েছে!")
 
         if added_count > 0 and sample_num:
-            flag, c_code, c_name = get_country_info(sample_num)
+            flag, c_code = get_country_info(sample_num)
             srv_emoji = "💚" if srv == "WHATSAPP" else ("💙" if srv == "TELEGRAM" else "💜")
             group_post = (
                 f"➖➖➖➖➖➖➖➖\n"
                 f"🆕 《 **NEW NUMBERS** 》\n"
                 f"➖➖➖➖➖➖➖➖\n"
-                f"{flag} **{c_name}** {srv_emoji} **{srv}**\n"
+                f"{flag} {c_code} {srv_emoji} **{srv}**\n"
                 f"➖➖➖➖➖➖➖➖\n"
                 f"📤 **Total Added:** {added_count} ✅\n"
                 f"➖➖➖➖➖➖➖➖\n"
@@ -390,9 +411,9 @@ def callback_del_service(call):
     for c_code in countries.keys():
         if countries[c_code]:
             sample_num = countries[c_code][0]
-            flag, _, c_name = get_country_info(sample_num)
+            flag, _ = get_country_info(sample_num)
             count = len(countries[c_code])
-            markup.add(InlineKeyboardButton(text=f"{flag} {c_name} ({count} pcs)", callback_data=f"delcountry_{srv}_{c_code}"))
+            markup.add(InlineKeyboardButton(text=f"{flag} {c_code} ({count} pcs)", callback_data=f"delcountry_{srv}_{c_code}"))
     
     markup.add(InlineKeyboardButton(text="🔙 Back", callback_data="back_to_delsrv"))
     bot.edit_message_text(f"🎯 Service: <b>{srv}</b>\n👇 কোন দেশের নাম্বার ডিলিট করতে চান সিলেক্ট করুন:", call.message.chat.id, call.message.message_id, parse_mode="HTML", reply_markup=markup)
@@ -443,8 +464,8 @@ def callback_get_service(call):
     markup = InlineKeyboardMarkup()
     for c_code, nums in countries.items():
         if len(nums) > 0:
-            flag, _, c_name = get_country_info(nums[0])
-            markup.add(InlineKeyboardButton(text=f"{flag} {c_name} (Stock: {len(nums)})", callback_data=f"get_country_{srv}_{c_code}"))
+            flag, _ = get_country_info(nums[0])
+            markup.add(InlineKeyboardButton(text=f"{flag} {c_code} (Stock: {len(nums)})", callback_data=f"get_country_{srv}_{c_code}"))
             
     markup.add(InlineKeyboardButton(text="🔙 Back", callback_data="back_to_services"))
     bot.edit_message_text(f"🎯 Service: <b>{srv}</b>\n👇 কোন দেশের নাম্বার নিতে চান সিলেক্ট করুন:", call.message.chat.id, call.message.message_id, parse_mode="HTML", reply_markup=markup)
@@ -571,13 +592,13 @@ def send_number_panel(chat_id, edit_message_id=None, selected_service="OTP", sel
             sent_msg = bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=markup)
             msg_id = sent_msg.message_id
     else:
-        sent_msg = bot.send_message(chat_id, text, parse_mode="HTML", reply_markup=markup)
+        sent_msg = bot.send_message(text, chat_id, parse_mode="HTML", reply_markup=markup)
         msg_id = sent_msg.message_id
 
     active_assignments[num1] = {"chat_id": chat_id, "message_id": msg_id, "slot": 1, "pair": num2, "otp": None, "service": selected_service, "country": selected_country}
     active_assignments[num2] = {"chat_id": chat_id, "message_id": msg_id, "slot": 2, "pair": num1, "otp": None, "service": selected_service, "country": selected_country}
 
-# ==================== AUGESTEL API WORKER (20 SECONDS INTERVAL) ====================
+# ==================== AUGESTEL API WORKER (21 SECONDS INTERVAL) ====================
 def fetch_from_augestel_api():
     url = f"{AUGESTEL_API_BASE_URL}/messages"
     headers = {
@@ -590,7 +611,7 @@ def fetch_from_augestel_api():
         res = http_session.get(url, headers=headers, params=params, timeout=15)
         
         if res.status_code == 429:
-            retry_after = int(res.headers.get("Retry-After", 20))
+            retry_after = int(res.headers.get("Retry-After", 21))
             print(f"⚠️ Augestel Rate limit hit (429). Pausing for {retry_after} seconds...")
             time.sleep(retry_after)
             return
@@ -613,13 +634,14 @@ def fetch_from_augestel_api():
             number = str(item.get('number', ''))
             sms_text = item.get('message', '')
             received_at = item.get('received_at', '')
+            cli = item.get('cli', 'OTP')
 
             unique_id = f"{number}_{received_at}_{sms_text}"
             if unique_id in processed_ids:
                 continue
 
             otp_code = extract_otp(sms_text)
-            service_short = get_service_short_name(sms_text)
+            service_short = get_service_short_name(cli, sms_text)
             clean_num = number.replace("+", "")
 
             if clean_num not in used_numbers:
@@ -630,10 +652,11 @@ def fetch_from_augestel_api():
                 no_otp_numbers.remove(clean_num)
                 save_list_from_memory(NO_OTP_FILE, list(no_otp_numbers))
 
-            flag, country_code, country_name = get_country_info(clean_num)
+            flag, country_code = get_country_info(clean_num)
             formatted_rabbi_num = format_group_number_with_rabbi(clean_num)
+            sms_lang = detect_sms_language(sms_text)
             
-            group_msg = f"{flag} #{country_code} 📱 {formatted_rabbi_num} #{country_code}\n💬 [{service_short}] OTP: <code>{otp_code}</code>"
+            group_msg = f"{flag} #{sms_lang} 📱 {formatted_rabbi_num} #{sms_lang}\n💬 [{service_short}] OTP: <code>{otp_code}</code>"
             
             markup = InlineKeyboardMarkup()
             copy_btn = InlineKeyboardButton(text=f"📋 {otp_code}", copy_text=CopyTextButton(text=str(otp_code)))
@@ -648,11 +671,11 @@ def fetch_from_augestel_api():
             except Exception as e:
                 print(f"Group send error: {e}")
 
-            if clean_num in active_assignments or clean_num in historical_assignments:
-                info = active_assignments.get(clean_num) or historical_assignments.get(clean_num)
+            if clean_num in active_assignments:
+                info = active_assignments[clean_num]
                 info["otp"] = otp_code
                 pair_num = info["pair"]
-                srv_name = info.get("service", "OTP")
+                srv_name = service_short # প্যানেল থেকে আসা রিয়েল সার্ভিস নাম
                 
                 try:
                     user_chat_id = info["chat_id"]
@@ -684,7 +707,7 @@ def augestel_worker_thread():
     time.sleep(5)
     while True:
         fetch_from_augestel_api()
-        time.sleep(20) # আগস্টেল এপিআইয়ের জন্য প্রতি ২০ সেকেন্ড পর পর রিকোয়েস্ট
+        time.sleep(21) # আগস্টেল এপিআইয়ের জন্য প্রতি ২১ সেকেন্ড পর পর রিকোয়েস্ট
 
 # ==================== SUPER-FAST CONCURRENT API FETCHER (NANO-SECOND SPEED FOR 4 PANELS) ====================
 def fetch_single_api(api):
@@ -740,13 +763,14 @@ def process_fast_panels():
         number = str(item.get('number', ''))
         sms_text = item.get('message', '')
         received_at = item.get('received_at', '')
+        cli = item.get('cli', 'OTP')
 
         unique_id = f"{number}_{received_at}_{sms_text}"
         if unique_id in processed_ids:
             continue
 
         otp_code = extract_otp(sms_text)
-        service_short = get_service_short_name(sms_text)
+        service_short = get_service_short_name(cli, sms_text)
         clean_num = number.replace("+", "")
 
         if clean_num not in used_numbers:
@@ -757,10 +781,11 @@ def process_fast_panels():
             no_otp_numbers.remove(clean_num)
             save_list_from_memory(NO_OTP_FILE, list(no_otp_numbers))
 
-        flag, country_code, country_name = get_country_info(clean_num)
+        flag, country_code = get_country_info(clean_num)
         formatted_rabbi_num = format_group_number_with_rabbi(clean_num)
+        sms_lang = detect_sms_language(sms_text)
         
-        group_msg = f"{flag} #{country_code} 📱 {formatted_rabbi_num} #{country_code}\n💬 [{service_short}] OTP: <code>{otp_code}</code>"
+        group_msg = f"{flag} #{sms_lang} 📱 {formatted_rabbi_num} #{sms_lang}\n💬 [{service_short}] OTP: <code>{otp_code}</code>"
         
         markup = InlineKeyboardMarkup()
         copy_btn = InlineKeyboardButton(text=f"📋 {otp_code}", copy_text=CopyTextButton(text=str(otp_code)))
@@ -775,11 +800,11 @@ def process_fast_panels():
         except Exception as e:
             print(f"Group send error: {e}")
 
-        if clean_num in active_assignments or clean_num in historical_assignments:
-            info = active_assignments.get(clean_num) or historical_assignments.get(clean_num)
+        if clean_num in active_assignments:
+            info = active_assignments[clean_num]
             info["otp"] = otp_code
             pair_num = info["pair"]
-            srv_name = info.get("service", "OTP")
+            srv_name = service_short # প্যানেল থেকে আসা রিয়েল সার্ভিস নাম
             
             try:
                 user_chat_id = info["chat_id"]
@@ -813,7 +838,6 @@ def fast_panels_worker_thread():
         time.sleep(1)
 
 if __name__ == "__main__":
-    # আগস্টেল এবং ৪টি ফাস্ট প্যানেলের জন্য আলাদা ব্যাকগ্রাউন্ড ওয়ার্কার চালু করা হলো
     t_augestel = threading.Thread(target=augestel_worker_thread, daemon=True)
     t_augestel.start()
     
