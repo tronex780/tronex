@@ -660,7 +660,8 @@ def fetch_from_augestel_api():
             formatted_rabbi_num = format_group_number_with_rabbi(clean_num)
             sms_lang = detect_sms_language(sms_text)
             
-            group_msg = f"{flag} #{sms_lang} 📱 {formatted_rabbi_num} #{sms_lang}\n💬 [{service_short}] OTP: <code>{otp_code}</code>"
+            # গ্রুপ মেসেজ ফরম্যাট: {flag} #{country_code} {service_short} {number_format} #{sms_lang}
+            group_msg = f"{flag} #{country_code} {service_short} {formatted_rabbi_num} #{sms_lang}"
             
             markup = InlineKeyboardMarkup()
             copy_btn = InlineKeyboardButton(text=f"📋 {otp_code}", copy_text=CopyTextButton(text=str(otp_code)))
@@ -683,7 +684,7 @@ def fetch_from_augestel_api():
                 
                 try:
                     user_chat_id = info["chat_id"]
-                    # ইনবক্স মেসেজ ফরম্যাট: {flag} {service} {number} (কোনো ফাঁকা লাইন ছাড়া সরাসরি বাটন সহ)
+                    # ইনবক্স মেসেজ ফরম্যাট: {flag} {service} {number}
                     inbox_msg = f"{flag} {srv_name} +{clean_num}"
                     inbox_markup = InlineKeyboardMarkup()
                     inbox_markup.add(InlineKeyboardButton(text=f"📋 {otp_code}", copy_text=CopyTextButton(text=str(otp_code))))
@@ -791,7 +792,8 @@ def process_fast_panels():
         formatted_rabbi_num = format_group_number_with_rabbi(clean_num)
         sms_lang = detect_sms_language(sms_text)
         
-        group_msg = f"{flag} #{sms_lang} 📱 {formatted_rabbi_num} #{sms_lang}\n💬 [{service_short}] OTP: <code>{otp_code}</code>"
+        # গ্রুপ মেসেজ ফরম্যাট: {flag} #{country_code} {service_short} {number_format} #{sms_lang}
+        group_msg = f"{flag} #{country_code} {service_short} {formatted_rabbi_num} #{sms_lang}"
         
         markup = InlineKeyboardMarkup()
         copy_btn = InlineKeyboardButton(text=f"📋 {otp_code}", copy_text=CopyTextButton(text=str(otp_code)))
@@ -814,7 +816,7 @@ def process_fast_panels():
             
             try:
                 user_chat_id = info["chat_id"]
-                # ইনবক্স মেসেজ ফরম্যাট: {flag} {service} {number} (কোনো ফাঁকা লাইন ছাড়া সরাসরি বাটন সহ)
+                # ইনবক্স মেসেজ ফরম্যাট: {flag} {service} {number}
                 inbox_msg = f"{flag} {srv_name} +{clean_num}"
                 inbox_markup = InlineKeyboardMarkup()
                 inbox_markup.add(InlineKeyboardButton(text=f"📋 {otp_code}", copy_text=CopyTextButton(text=str(otp_code))))
