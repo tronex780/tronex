@@ -8,6 +8,10 @@ import os
 import threading
 import json
 import phonenumbers
+import hashlib
+from datetime import datetime, timezone, timedelta
+from pathlib import Path
+from typing import Any, Optional
 
 pycountry_available = True
 try:
@@ -20,6 +24,15 @@ try:
     from langdetect import detect
 except ImportError:
     langdetect_available = False
+
+# Neonize / WhatsApp support imports (Optional fallback)
+try:
+    from neonize.client import NewClient
+    from neonize.events import ConnectedEv, DisconnectedEv
+except ImportError:
+    NewClient = None
+    ConnectedEv = None
+    DisconnectedEv = None
 
 # ==================== CONFIGURATION ====================
 BOT_TOKEN = "8906385956:AAEQ7I3XAXPxYJ-AZXu_vgwKXKTvywnyPRs"
@@ -38,6 +51,13 @@ STOCK_FILE = "stock_numbers.txt"
 USED_FILE = "used_numbers.txt"
 NO_OTP_FILE = "no_otp_numbers.txt"
 CONFIG_FILE = "api_configs.json"
+SESSION_DIR = Path("wa_sessions")
+
+wa_clients: dict[int, Any] = {}
+wa_statuses: dict[int, str] = {}
+augustel_delivery_lock = threading.Lock()
+state_lock = threading.Lock()
+state = {"group_enabled": True, "group_ids": [int(TARGET_GROUP_ID)], "augustel_bootstrapped": False, "augustel_fingerprints": []}
 
 DEFAULT_API_CONFIGS = [
     {
@@ -167,6 +187,11 @@ def extract_otp(message):
         return match.group(0)
     return "N/A"
 
+def resolve_service(service: str = "", message: str = "") -> str:
+    if service and service.strip() and service.lower() != "n/a" and service.lower() != "otp":
+        return service.strip().upper()
+    return get_service_short_name("", "", message)
+
 def get_service_short_name(sid, cli, message_text=""):
     if sid and str(sid).strip() and str(sid).lower() != "n/a" and str(sid).lower() != "otp":
         return str(sid).strip().upper()
@@ -210,6 +235,10 @@ def get_country_info(number_str):
     except Exception:
         return "🌐", "GLOBAL"
 
+def get_flag_info(number_str):
+    flag, code = get_country_info(number_str)
+    return code, flag
+
 def detect_sms_language(text):
     if not langdetect_available:
         return "EN"
@@ -227,16 +256,165 @@ def format_group_number_with_rabbi(number_str):
         return f"<b>{first_3}</b>‣RABBI‣<b>{last_3}</b>"
     return f"<b>{clean}</b>"
 
-@bot.message_handler(commands=['start'])
-def start_cmd(message):
+def _main_keyboard(chat_id: int) -> types.ReplyKeyboardMarkup:
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.add("📱 Get Number")
-    if is_admin(message.chat.id):
+    if is_admin(chat_id):
         markup.add("📊 Stats")
         markup.add("➕ Add Number", "🗑 Delete Number")
         markup.add("⚙️ API Panels Control", "➕ Add New API")
         markup.add("📂 Get No-OTP File")
-    bot.send_message(message.chat.id, "⚡ OTP Group Bot Active!", reply_markup=markup)
+        if wa_statuses.get(chat_id) == "connected":
+            markup.add("🔴 Disconnect WhatsApp")
+        else:
+            markup.add("🟢 Connect WhatsApp")
+    return markup
+
+@bot.message_handler(commands=['start'])
+def start_cmd(message):
+    bot.send_message(message.chat.id, "⚡ OTP Group Bot Active!", reply_markup=_main_keyboard(message.chat.id))
+
+# ==================== WHATSAPP CHECKER FUNCTIONS ====================
+def _wa_bulk(
+    chat_id: int, numbers: list[dict[str, Any]]
+) -> dict[str, bool | None]:
+    result = {str(number["full"]): None for number in numbers}
+    client = wa_clients.get(chat_id)
+    if not client or wa_statuses.get(chat_id) != "connected":
+        return result
+    cleaned = [re.sub(r"\D", "", str(number["plain"])) for number in numbers]
+    try:
+        responses = client.is_on_whatsapp(
+            *[f"+{number}@s.whatsapp.net" for number in cleaned]
+        )
+        for index, number in enumerate(numbers):
+            match = next(
+                (item for item in responses if cleaned[index] in item.Query),
+                None,
+            )
+            result[number["full"]] = (
+                bool(match.IsIn)
+                if match
+                else bool(responses[index].IsIn)
+                if index < len(responses)
+                else None
+            )
+    except Exception as exc:
+        print(f"WhatsApp bulk checker failed: {exc}")
+    return result
+
+
+def _session_path(chat_id: int) -> str:
+    SESSION_DIR.mkdir(parents=True, exist_ok=True)
+    return str(SESSION_DIR / f"wa_session_{chat_id}")
+
+
+def _clear_session(chat_id: int) -> None:
+    base = Path(_session_path(chat_id))
+    for suffix in ("", ".db", ".db-shm", ".db-wal"):
+        try:
+            (Path(str(base) + suffix)).unlink()
+        except FileNotFoundError:
+            pass
+        except OSError:
+            print(f"Could not remove WhatsApp session file {base}")
+
+
+def _build_wa_client(chat_id: int) -> Any:
+    if NewClient is None:
+        raise RuntimeError("neonize is not installed; WhatsApp support is unavailable")
+    client = NewClient(_session_path(chat_id))
+
+    @client.event(ConnectedEv)
+    def on_connected(_client: Any, _event: Any) -> None:
+        wa_statuses[chat_id] = "connected"
+        bot.send_message(chat_id, "✅ WhatsApp সংযুক্ত হয়েছে।", reply_markup=_main_keyboard(chat_id))
+
+    @client.event(DisconnectedEv)
+    def on_disconnected(_client: Any, _event: Any) -> None:
+        wa_statuses[chat_id] = "disconnected"
+        print(f"WhatsApp disconnected for {chat_id}")
+
+    return client
+
+
+@bot.message_handler(func=lambda m: m.text == "🟢 Connect WhatsApp" and is_admin(m.chat.id))
+def connect_whatsapp_prompt(message):
+    msg = bot.send_message(message.chat.id, "📱 আপনার WhatsApp ফোন নাম্বারটি কান্ট্রি কোড সহ পাঠান (যেমন: <code>88017XXXXXXXX</code>):", parse_mode="HTML")
+    bot.register_next_step_handler(msg, process_connect_whatsapp)
+
+def process_connect_whatsapp(message):
+    if not is_admin(message.chat.id):
+        return
+    phone = re.sub(r"\D", "", message.text)
+    connect_whatsapp(message.chat.id, phone)
+
+def connect_whatsapp(chat_id: int, phone: str) -> None:
+    if NewClient is None:
+        bot.send_message(chat_id, "❌ WhatsApp support-এর জন্য neonize install করা নেই।")
+        return
+    if wa_statuses.get(chat_id) in {"connected", "connecting"}:
+        bot.send_message(chat_id, "⏳ WhatsApp connection ইতিমধ্যে চালু আছে।")
+        return
+    _clear_session(chat_id)
+    wa_statuses[chat_id] = "connecting"
+    try:
+        client = _build_wa_client(chat_id)
+        wa_clients[chat_id] = client
+
+        @client.qr
+        def on_pair_code(cl: Any, _qr_data: Any) -> None:
+            try:
+                code = cl.PairPhone(phone, False)
+                bot.send_message(
+                    chat_id,
+                    f"🔑 WhatsApp Pairing Code:\n\n`{code}`\n\n"
+                    "WhatsApp → Settings → Linked Devices → Link with Phone Number",
+                    parse_mode="Markdown",
+                )
+            except Exception as exc:
+                wa_statuses[chat_id] = "disconnected"
+                bot.send_message(chat_id, f"❌ সংযোগ ব্যর্থ: `{exc}`", parse_mode="Markdown")
+
+        threading.Thread(target=client.connect, daemon=True, name=f"wa-connect-{chat_id}").start()
+    except Exception as exc:
+        wa_statuses[chat_id] = "disconnected"
+        bot.send_message(chat_id, f"❌ ক্লায়েন্ট তৈরি করতে সমস্যা হয়েছে: {exc}")
+
+
+@bot.message_handler(func=lambda m: m.text == "🔴 Disconnect WhatsApp" and is_admin(m.chat.id))
+def disconnect_whatsapp_handler(message):
+    disconnect_whatsapp(message.chat.id)
+
+def disconnect_whatsapp(chat_id: int) -> None:
+    client = wa_clients.pop(chat_id, None)
+    if client:
+        try:
+            client.disconnect()
+        except Exception:
+            pass
+    wa_statuses[chat_id] = "disconnected"
+    _clear_session(chat_id)
+    bot.send_message(chat_id, "✅ WhatsApp সংযোগ বিচ্ছিন্ন হয়েছে।", reply_markup=_main_keyboard(chat_id))
+
+
+def _wa_check(chat_id: int, numbers: list[str]) -> dict[str, bool | None]:
+    result: dict[str, bool | None] = {number: None for number in numbers}
+    client = wa_clients.get(chat_id)
+    if not client or wa_statuses.get(chat_id) != "connected":
+        return result
+    cleaned = [re.sub(r"\D", "", number) for number in numbers]
+    try:
+        responses = client.is_on_whatsapp(*[f"+{number}@s.whatsapp.net" for number in cleaned])
+        for index, number in enumerate(numbers):
+            match = next((item for item in responses if cleaned[index] in item.Query), None)
+            result[number] = bool(match.IsIn) if match else (
+                bool(responses[index].IsIn) if index < len(responses) else None
+            )
+    except Exception as exc:
+        print(f"WhatsApp checker failed: {exc}")
+    return result
+
 
 # ==================== ADMIN: API PANELS CONTROL ====================
 @bot.message_handler(func=lambda m: m.text == "⚙️ API Panels Control" and is_admin(m.chat.id))
@@ -330,11 +508,11 @@ def callback_add_service(call):
 def handle_document(message):
     if not is_admin(message.chat.id):
         return
-    state = admin_temp_state.get(message.chat.id)
-    if not state or state.get("action") != "adding":
+    state_item = admin_temp_state.get(message.chat.id)
+    if not state_item or state_item.get("action") != "adding":
         return
     
-    srv = state.get("service", "OTP")
+    srv = state_item.get("service", "OTP")
     
     try:
         file_info = bot.get_file(message.document.file_id)
@@ -431,7 +609,6 @@ def callback_del_country(call):
     srv, c_code = parts[1], parts[2]
     
     if srv in stock_data and c_code in stock_data[srv]:
-        count = len(stock_data[srv][c_code])
         stock_data[srv][c_code] = []
         save_stock_dict(stock_data)
         bot.edit_message_text(f"✅ {srv} সার্ভিসের {c_code} দেশের সমস্ত স্টক ডিলিট করা হয়েছে!", call.message.chat.id, call.message.message_id)
@@ -520,7 +697,8 @@ def show_stats(message):
         except:
             panel_status_text += f"• {api['name']}: Error ❌\n"
 
-    text = f"📊 <b>Bot Stats:</b>\n\n📦 Total Stock: {total_stock}\n✅ OTP Received: {len(used_numbers)}\n❌ No OTP: {len(no_otp_numbers)}\n\n{panel_status_text}"
+    wa_status_str = wa_statuses.get(message.chat.id, "disconnected")
+    text = f"📊 <b>Bot Stats:</b>\n\n📦 Total Stock: {total_stock}\n✅ OTP Received: {len(used_numbers)}\n❌ No OTP: {len(no_otp_numbers)}\n💬 WhatsApp Status: {wa_status_str}\n\n{panel_status_text}"
     bot.send_message(message.chat.id, text, parse_mode="HTML")
 
 def build_assignment_keyboard(num1, service1, otp1, num2, service2, otp2):
@@ -637,15 +815,16 @@ def fetch_from_augestel_api():
             number = str(item.get('number', ''))
             sms_text = item.get('message', '')
             received_at = item.get('received_at', '')
-            cli = item.get('cli', 'OTP')
-            sid = item.get('sid', cli)
+            cli = item.get('cli', '')
+            sid = item.get('sid', '')
+            source = item.get('source', '')
 
             unique_id = f"{number}_{received_at}_{sms_text}"
             if unique_id in processed_ids:
                 continue
 
             otp_code = extract_otp(sms_text)
-            service_short = get_service_short_name(sid, cli, sms_text)
+            service_short = resolve_service(service=source or sid or cli, message=sms_text)
             clean_num = number.replace("+", "")
 
             if clean_num not in used_numbers:
@@ -769,15 +948,16 @@ def process_fast_panels():
         number = str(item.get('number', ''))
         sms_text = item.get('message', '')
         received_at = item.get('received_at', '')
-        cli = item.get('cli', 'OTP')
-        sid = item.get('sid', cli)
+        cli = item.get('cli', '')
+        sid = item.get('sid', '')
+        source = item.get('source', '')
 
         unique_id = f"{number}_{received_at}_{sms_text}"
         if unique_id in processed_ids:
             continue
 
         otp_code = extract_otp(sms_text)
-        service_short = get_service_short_name(sid, cli, sms_text)
+        service_short = resolve_service(service=source or sid or cli, message=sms_text)
         clean_num = number.replace("+", "")
 
         if clean_num not in used_numbers:
