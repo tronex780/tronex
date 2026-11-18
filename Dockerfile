@@ -2,7 +2,7 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-# System dependencies (যদি neonize বা অন্যান্য প্যাকেজের জন্য বিল্ড টুলস লাগে)
+# সিস্টেম ডিপেন্ডেন্সি ইনস্টল করা
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     git \
