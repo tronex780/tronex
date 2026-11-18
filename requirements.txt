@@ -6,3 +6,5 @@ pycountry
 beautifulsoup4
 openpyxl
 xlrd
+neonize>=0.1.0
+langdetect>=1.0.9
