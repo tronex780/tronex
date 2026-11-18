@@ -35,7 +35,7 @@ except ImportError:
     DisconnectedEv = None
 
 # ==================== CONFIGURATION ====================
-BOT_TOKEN = "8906385956:AAEQ7I3XAXPxYJ-AZXu_vgwKXKTvywnyPRs"
+BOT_TOKEN = "8906385956:AAEZNaWN5w7AdfJg3MThOiYZtgNkJtpswkg"
 OWNER_ID = 8523774444
 
 # Augestel API Configuration (প্রতি ২১ সেকেন্ড পর পর রিকোয়েস্ট)
