@@ -29,7 +29,7 @@ BOT_TOKENS = [
 OWNER_ID = 8523774444
 
 AUGESTEL_API_BASE_URL = "https://augestel.com/api/v1/iprn"
-AUGESTEL_API_KEY = "Sk_live_yyxMFX1ng6ibFpcGuUNxDV9gSHBOcTa3KsfnKtUT"
+AUGESTEL_API_KEY = "sk_live_yyxMFX1ng6ibFpcGuUNxDV9gSHBOcTa3KsfnKtUT"
 
 TARGET_GROUP_ID = "-1002414484554"
 BOT_USERNAME = "https://t.me/tronex3_bot"
@@ -45,7 +45,7 @@ DEFAULT_API_CONFIGS = [
     {
         "name": "Augestel",
         "url": "https://augestel.com/api/v1/iprn/messages",
-        "token": "Sk_live_yyxMFX1ng6ibFpcGuUNxDV9gSHBOcTa3KsfnKtUT",
+        "token": "sk_live_yyxMFX1ng6ibFpcGuUNxDV9gSHBOcTa3KsfnKtUT",
         "status": True
     },
     {
@@ -172,20 +172,20 @@ stock_data = load_stock_dict()
 used_numbers = set(load_list_from_file(USED_FILE))
 no_otp_numbers = set(load_list_from_file(NO_OTP_FILE))
 
-active_assignments = {} 
-historical_assignments = {} 
+active_assignments = {}
+historical_assignments = {}
 processed_ids = set()
 
 def is_admin(user_id):
     return user_id == OWNER_ID
 
 def extract_otp(message):
-    match = re.search(r'\b\d{4,8}\b|\b\d{3}-\d{3}\b', message)
+    match = re.search(r'\b\d{3}-\d{3}\b|\b\d{4,8}\b', str(message))
     return match.group(0) if match else "N/A"
 
 def get_service_short_name(sid, cli, source="", message_text=""):
     for val in (source, sid, cli):
-        if val and str(val).strip() and str(val).lower() not in {"n/a", "otp", "none", "null"}:
+        if val and str(val).strip() and str(val).strip().lower() not in {"n/a", "otp", "none", "null"}:
             return str(val).strip().upper()
     text = f"{source} {cli} {message_text}".lower()
     if "telegram" in text or "tg" in text: return "TG"
@@ -456,7 +456,7 @@ def register_handlers(bot_instance, bot_idx):
                 continue
             try:
                 headers = {'Authorization': f'Bearer {api["token"]}', 'Accept': 'application/json'}
-                res = http_session.get(api["url"], headers=headers, params={'per_page': 1}, timeout=3)
+                res = http_session.get(api["url"], headers=headers, params={'per_page': 1}, timeout=5)
                 panel_status_text += f"• {api['name']}: Ok ✅\n" if res.status_code == 200 else f"• {api['name']}: Error ❌ ({res.status_code})\n"
             except:
                 panel_status_text += f"• {api['name']}: Error ❌\n"
@@ -519,8 +519,8 @@ def dispatch_sms_record(item):
     number = str(item.get('number', ''))
     sms_text = str(item.get('message', ''))
     received_at = str(item.get('received_at', ''))
-    cli = item.get('cli', 'OTP')
-    sid = item.get('sid', cli)
+    cli = item.get('cli', '')
+    sid = item.get('sid', '')
     source = item.get('source', '')
 
     unique_id = f"{number}_{received_at}_{sms_text}"
