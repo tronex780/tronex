@@ -29,7 +29,7 @@ BOT_TOKENS = [
 OWNER_ID = 8523774444
 
 AUGESTEL_API_BASE_URL = "https://augestel.com/api/v1/iprn"
-AUGESTEL_API_KEY = "sk_live_lAYP9reVGmr3wHVcsJ3AOIBqjGMtiErHc959Ngeo"
+AUGESTEL_API_KEY = "Sk_live_yyxMFX1ng6ibFpcGuUNxDV9gSHBOcTa3KsfnKtUT"
 
 TARGET_GROUP_ID = "-1002414484554"
 BOT_USERNAME = "https://t.me/tronex3_bot"
@@ -45,7 +45,7 @@ DEFAULT_API_CONFIGS = [
     {
         "name": "Augestel",
         "url": "https://augestel.com/api/v1/iprn/messages",
-        "token": "sk_live_lAYP9reVGmr3wHVcsJ3AOIBqjGMtiErHc959Ngeo",
+        "token": "Sk_live_yyxMFX1ng6ibFpcGuUNxDV9gSHBOcTa3KsfnKtUT",
         "status": True
     },
     {
@@ -334,7 +334,7 @@ def register_handlers(bot_instance, bot_idx):
                             added_count += 1
             save_stock_dict(stock_data)
             del admin_temp_state[(bot_idx, message.chat.id)]
-            bot_instance.send_message(message.chat.id, f"✅ সফলভাবে {added_count} টি নাম্বার {srv} সার্ভিসে স্টকে যুক্ত করা হয়েছে!")
+            bot_instance.send_message(message.chat.id, f"✅ সফলভাবে {added_count} টি নাম্বার {srv} সার্ভিসে স্টকে যুক্ত হয়েছে!")
 
             if added_count > 0 and sample_num:
                 flag, c_code = get_country_info(sample_num)
