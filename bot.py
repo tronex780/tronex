@@ -36,6 +36,9 @@ BOT_USERNAME = "https://t.me/tronex3_bot"
 OTP_GROUP_URL = "https://t.me/gjifch743"
 MAIN_CHANNEL_URL = "https://t.me/facboo578"
 
+# বট রান হলে শুরুতে ১ বার old OTP রিসিভ হবে কি না (True = ১ বার হবে, False = শুধু নতুনগুলো হবে)
+ALLOW_ONE_OLD_OTP_BURST = True
+
 STOCK_FILE = "stock_numbers.txt"
 USED_FILE = "used_numbers.txt"
 NO_OTP_FILE = "no_otp_numbers.txt"
@@ -172,9 +175,10 @@ stock_data = load_stock_dict()
 used_numbers = set(load_list_from_file(USED_FILE))
 no_otp_numbers = set(load_list_from_file(NO_OTP_FILE))
 
-active_assignments = {}
-historical_assignments = {}
+active_assignments = {}      # clean_num -> {bot_idx, chat_id, message_id, slot, pair, otp, service, country}
+historical_assignments = {}  # clean_num -> assignment dict
 processed_ids = set()
+startup_old_otp_done = False
 
 def is_admin(user_id):
     return user_id == OWNER_ID
@@ -513,7 +517,7 @@ def send_number_panel(bot_instance, bot_idx, chat_id, edit_message_id=None, sele
         active_assignments[num1] = {"bot_idx": bot_idx, "chat_id": chat_id, "message_id": msg_id, "slot": 1, "pair": num2, "otp": None, "service": selected_service, "country": selected_country}
         active_assignments[num2] = {"bot_idx": bot_idx, "chat_id": chat_id, "message_id": msg_id, "slot": 2, "pair": num1, "otp": None, "service": selected_service, "country": selected_country}
 
-def dispatch_sms_record(item):
+def dispatch_sms_record(item, send_to_group=True):
     if not isinstance(item, dict):
         return
     number = str(item.get('number', ''))
@@ -545,16 +549,18 @@ def dispatch_sms_record(item):
     formatted_rabbi_num = format_group_number_with_rabbi(clean_num)
     sms_lang = detect_sms_language(sms_text)
 
-    group_msg = f"{flag} #{country_code} {service_short} {formatted_rabbi_num} #{sms_lang}"
-    markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton(text=f"📋 {otp_code}", copy_text=CopyTextButton(text=str(otp_code))))
-    markup.add(InlineKeyboardButton(text="Number BOT", url=BOT_USERNAME), InlineKeyboardButton(text="Main Channel", url=MAIN_CHANNEL_URL))
+    if send_to_group:
+        group_msg = f"{flag} #{country_code} {service_short} {formatted_rabbi_num} #{sms_lang}"
+        markup = InlineKeyboardMarkup()
+        markup.add(InlineKeyboardButton(text=f"📋 {otp_code}", copy_text=CopyTextButton(text=str(otp_code))))
+        markup.add(InlineKeyboardButton(text="Number BOT", url=BOT_USERNAME), InlineKeyboardButton(text="Main Channel", url=MAIN_CHANNEL_URL))
 
-    try:
-        bots[0].send_message(TARGET_GROUP_ID, group_msg, parse_mode="HTML", reply_markup=markup)
-    except Exception as e:
-        print(f"Group send error: {e}")
+        try:
+            bots[0].send_message(TARGET_GROUP_ID, group_msg, parse_mode="HTML", reply_markup=markup)
+        except Exception as e:
+            print(f"Group send error: {e}")
 
+    # যে ইউজার যে নাম্বার নিয়েছে, তার ইনবক্সে SMS এবং OTP পাঠানো
     with data_lock:
         info = active_assignments.get(clean_num)
     if info:
@@ -562,10 +568,13 @@ def dispatch_sms_record(item):
         pair_num = info["pair"]
         target_bot = bots[info["bot_idx"]]
         try:
-            inbox_msg = f"{flag} {service_short} +{clean_num}"
+            inbox_msg = (
+                f"{flag} <b>{service_short}</b> <code>+{clean_num}</code>\n"
+                f"📩 <code>{sms_text}</code>"
+            )
             inbox_markup = InlineKeyboardMarkup()
             inbox_markup.add(InlineKeyboardButton(text=f"📋 {otp_code}", copy_text=CopyTextButton(text=str(otp_code))))
-            target_bot.send_message(info["chat_id"], inbox_msg, reply_markup=inbox_markup)
+            target_bot.send_message(info["chat_id"], inbox_msg, parse_mode="HTML", reply_markup=inbox_markup)
         except Exception as e:
             print(f"Inbox send error: {e}")
 
@@ -581,6 +590,7 @@ def dispatch_sms_record(item):
             pass
 
 def fetch_from_augestel_api():
+    global startup_old_otp_done
     url = f"{AUGESTEL_API_BASE_URL}/messages"
     headers = {'Authorization': f'Bearer {AUGESTEL_API_KEY}', 'Accept': 'application/json'}
     params = {'per_page': 5, 'page': 1}
@@ -598,8 +608,25 @@ def fetch_from_augestel_api():
         records = response_data.get("data", [])
         if isinstance(records, list):
             records.reverse()
+
+        with data_lock:
+            is_first_poll = not startup_old_otp_done
+            startup_old_otp_done = True
+
+        if is_first_poll:
+            if ALLOW_ONE_OLD_OTP_BURST:
+                for item in records:
+                    dispatch_sms_record(item, send_to_group=True)
+            else:
+                for item in records:
+                    if isinstance(item, dict):
+                        uid = f"{item.get('number', '')}_{item.get('received_at', '')}_{item.get('message', '')}"
+                        with data_lock:
+                            processed_ids.add(uid)
+            return
+
         for item in records:
-            dispatch_sms_record(item)
+            dispatch_sms_record(item, send_to_group=True)
     except Exception as e:
         print(f"Augestel API fetch error: {e}")
 
@@ -645,7 +672,7 @@ def fast_panels_worker_thread():
     time.sleep(2)
     while True:
         for item in fetch_all_apis_concurrently():
-            dispatch_sms_record(item)
+            dispatch_sms_record(item, send_to_group=True)
         with data_lock:
             if len(processed_ids) > 8000:
                 processed_ids.clear()
