@@ -23,8 +23,8 @@ except ImportError:
 
 # ==================== CONFIGURATION ====================
 BOT_TOKENS = [
-    "8906385956:AAEQ7I3XAXPxYJ-AZXu_vgwKXKTvywnyPRs",
-    "8906385956:AAEZNaWN5w7AdfJg3MThOiYZtgNkJtpswkg"
+    "8906385956:AAEZNaWN5w7AdfJg3MThOiYZtgNkJtpswkg",
+    "8906385956:AAEQ7I3XAXPxYJ-AZXu_vgwKXKTvywnyPRs"
 ]
 OWNER_ID = 8523774444
 
@@ -104,6 +104,22 @@ http_session.mount("http://", adapter)
 
 admin_temp_state = {}
 data_lock = threading.Lock()
+
+def tg_api_post(token, method, payload):
+    try:
+        res = http_session.post(
+            f"https://api.telegram.org/bot{token}/{method}",
+            json=payload,
+            timeout=15
+        )
+        if res.status_code != 200:
+            print(f"TG API {method} failed ({res.status_code}): {res.text[:200]}")
+            return None
+        data = res.json()
+        return data.get("result") if data.get("ok") else None
+    except Exception as e:
+        print(f"TG API request error ({method}): {e}")
+        return None
 
 def load_stock_dict():
     if not os.path.exists(STOCK_FILE):
@@ -354,12 +370,14 @@ def register_handlers(bot_instance, bot_idx):
                     f"➖➖➖➖➖➖➖➖\n"
                     f"🚀 **Use bot link to get your numbers!** 👉"
                 )
-                markup = InlineKeyboardMarkup()
-                markup.add(InlineKeyboardButton(text="Number BOT", url=BOT_USERNAME))
-                try:
-                    bot_instance.send_message(TARGET_GROUP_ID, group_post, parse_mode="Markdown", reply_markup=markup)
-                except:
-                    pass
+                tg_api_post(BOT_TOKENS[0], "sendMessage", {
+                    "chat_id": TARGET_GROUP_ID,
+                    "text": group_post,
+                    "parse_mode": "Markdown",
+                    "reply_markup": {
+                        "inline_keyboard": [[{"text": "Number BOT", "url": BOT_USERNAME}]]
+                    }
+                })
         except Exception as e:
             bot_instance.send_message(message.chat.id, f"❌ ফাইল প্রসেস করতে সমস্যা হয়েছে: {e}")
 
@@ -570,15 +588,23 @@ def dispatch_sms_record(item, send_to_group=True, allow_inbox=True, force_group_
 
     if send_to_group and (force_group_send or not already_seen):
         group_msg = f"{flag} #{country_code} {service_short} {formatted_rabbi_num} #{sms_lang}"
-        markup = InlineKeyboardMarkup()
-        markup.add(InlineKeyboardButton(text=f"📋 {otp_code}", copy_text=CopyTextButton(text=str(otp_code))))
-        markup.add(InlineKeyboardButton(text="Number BOT", url=BOT_USERNAME), InlineKeyboardButton(text="Main Channel", url=MAIN_CHANNEL_URL))
+        group_payload = {
+            "chat_id": TARGET_GROUP_ID,
+            "text": group_msg,
+            "parse_mode": "HTML",
+            "reply_markup": {
+                "inline_keyboard": [
+                    [{"text": f"📋 {otp_code}", "copy_text": {"text": str(otp_code)}}],
+                    [
+                        {"text": "Number BOT", "url": BOT_USERNAME},
+                        {"text": "Main Channel", "url": MAIN_CHANNEL_URL}
+                    ]
+                ]
+            }
+        }
+        tg_api_post(BOT_TOKENS[0], "sendMessage", group_payload)
 
-        try:
-            bots[0].send_message(TARGET_GROUP_ID, group_msg, parse_mode="HTML", reply_markup=markup)
-        except Exception as e:
-            print(f"Group send error: {e}")
-
+    # old OTP কখনো ইনবক্সে যাবে না এবং একই মেসেজ ২ বার ইনবক্সে যাবে না
     if not allow_inbox or already_seen:
         return
 
@@ -592,26 +618,34 @@ def dispatch_sms_record(item, send_to_group=True, allow_inbox=True, force_group_
         delivered_inbox_ids.add(inbox_dedup_key)
         info["otp"] = otp_code
         pair_num = info["pair"]
-        target_bot = bots[info["bot_idx"]]
+        target_token = BOT_TOKENS[info["bot_idx"]]
         pair_info = active_assignments.get(pair_num) or historical_assignments.get(pair_num)
         pair_otp = pair_info["otp"] if pair_info else None
         n1, o1 = (clean_num, otp_code) if info["slot"] == 1 else (pair_num, pair_otp)
         n2, o2 = (pair_num, pair_otp) if info["slot"] == 1 else (clean_num, otp_code)
-        new_markup = build_assignment_keyboard(n1, service_short, o1, n2, service_short, o2)
 
+    inbox_msg = (
+        f"{flag} <b>{service_short}</b> <code>+{clean_num}</code>\n"
+        f"📩 <code>{sms_text}</code>"
+    )
+    tg_api_post(target_token, "sendMessage", {
+        "chat_id": info["chat_id"],
+        "text": inbox_msg,
+        "parse_mode": "HTML",
+        "reply_markup": {
+            "inline_keyboard": [
+                [{"text": f"📋 {otp_code}", "copy_text": {"text": str(otp_code)}}]
+            ]
+        }
+    })
+
+    new_markup = build_assignment_keyboard(n1, service_short, o1, n2, service_short, o2)
     try:
-        inbox_msg = (
-            f"{flag} <b>{service_short}</b> <code>+{clean_num}</code>\n"
-            f"📩 <code>{sms_text}</code>"
+        bots[info["bot_idx"]].edit_message_reply_markup(
+            chat_id=info["chat_id"],
+            message_id=info["message_id"],
+            reply_markup=new_markup
         )
-        inbox_markup = InlineKeyboardMarkup()
-        inbox_markup.add(InlineKeyboardButton(text=f"📋 {otp_code}", copy_text=CopyTextButton(text=str(otp_code))))
-        target_bot.send_message(info["chat_id"], inbox_msg, parse_mode="HTML", reply_markup=inbox_markup)
-    except Exception as e:
-        print(f"Inbox send error: {e}")
-
-    try:
-        target_bot.edit_message_reply_markup(chat_id=info["chat_id"], message_id=info["message_id"], reply_markup=new_markup)
     except:
         pass
 
@@ -642,7 +676,6 @@ def fetch_from_augestel_api():
                 augestel_old_otp_sent = True
 
         if first_run:
-            # বট রান হওয়ার পর ১ বার old OTP গ্রুপে পাঠাবে (ইনবক্সে যাবে না)
             for item in records:
                 dispatch_sms_record(
                     item,
@@ -652,7 +685,6 @@ def fetch_from_augestel_api():
                 )
             return
 
-        # এরপর থেকে শুধু নতুন OTP গ্রুপে এবং ইউজারের ইনবক্সে যাবে
         for item in records:
             dispatch_sms_record(item, send_to_group=True, allow_inbox=True, force_group_send=False)
     except Exception as e:
