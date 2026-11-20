@@ -36,7 +36,7 @@ BOT_USERNAME = "https://t.me/tronex3_bot"
 OTP_GROUP_URL = "https://t.me/gjifch743"
 MAIN_CHANNEL_URL = "https://t.me/facboo578"
 
-# বট রান হলে শুরুতে ১ বার old OTP গ্রুপে যাবে (ইনবক্সে কখনো old OTP যাবে না)
+# বট রান হলে শুরুতে ১ বার old OTP গ্রুপে যাবে, তারপর থেকে শুধু নতুন OTP রিসিভ হবে
 SEND_OLD_OTP_ONCE_ON_START = True
 
 STOCK_FILE = "stock_numbers.txt"
@@ -175,10 +175,10 @@ stock_data = load_stock_dict()
 used_numbers = set(load_list_from_file(USED_FILE))
 no_otp_numbers = set(load_list_from_file(NO_OTP_FILE))
 
-active_assignments = {}       # clean_num -> assignment dict
-historical_assignments = {}   # clean_num -> assignment dict
-processed_ids = set()         # যেসব SMS/OTP ইতিমধ্যে প্রসেস বা দেখা হয়ে গেছে
-delivered_inbox_ids = set()   # (chat_id, clean_num, unique_id) যাতে ইনবক্সে ২ বার না যায়
+active_assignments = {}
+historical_assignments = {}
+processed_ids = set()
+delivered_inbox_ids = set()
 augestel_old_otp_sent = False
 
 def is_admin(user_id):
@@ -498,7 +498,6 @@ def send_number_panel(bot_instance, bot_idx, chat_id, edit_message_id=None, sele
         num1 = re.sub(r'\D', '', str(stock_data[selected_service][selected_country].pop(0)))
         num2 = re.sub(r'\D', '', str(stock_data[selected_service][selected_country].pop(0)))
 
-        # পুরনো অ্যাসাইনমেন্ট থাকলে পরিষ্কার করে নতুন অ্যাসাইনমেন্ট সেট করা
         for old_num, old_info in list(active_assignments.items()):
             if old_info.get("chat_id") == chat_id and old_info.get("bot_idx") == bot_idx:
                 historical_assignments[old_num] = old_info
@@ -535,7 +534,7 @@ def send_number_panel(bot_instance, bot_idx, chat_id, edit_message_id=None, sele
             "assigned_at": assigned_at
         }
 
-def dispatch_sms_record(item, send_to_group=True, allow_inbox=True):
+def dispatch_sms_record(item, send_to_group=True, allow_inbox=True, force_group_send=False):
     if not isinstance(item, dict):
         return
     number = str(item.get('number', ''))
@@ -552,8 +551,7 @@ def dispatch_sms_record(item, send_to_group=True, allow_inbox=True):
     unique_id = f"{clean_num}_{received_at}_{sms_text}"
     with data_lock:
         already_seen = unique_id in processed_ids
-        if not already_seen:
-            processed_ids.add(unique_id)
+        processed_ids.add(unique_id)
 
     otp_code = extract_otp(sms_text)
     service_short = get_service_short_name(sid, cli, source, sms_text)
@@ -570,7 +568,7 @@ def dispatch_sms_record(item, send_to_group=True, allow_inbox=True):
     formatted_rabbi_num = format_group_number_with_rabbi(clean_num)
     sms_lang = detect_sms_language(sms_text)
 
-    if send_to_group and not already_seen:
+    if send_to_group and (force_group_send or not already_seen):
         group_msg = f"{flag} #{country_code} {service_short} {formatted_rabbi_num} #{sms_lang}"
         markup = InlineKeyboardMarkup()
         markup.add(InlineKeyboardButton(text=f"📋 {otp_code}", copy_text=CopyTextButton(text=str(otp_code))))
@@ -581,7 +579,6 @@ def dispatch_sms_record(item, send_to_group=True, allow_inbox=True):
         except Exception as e:
             print(f"Group send error: {e}")
 
-    # ইনবক্সে শুধু নতুন OTP এবং ডুপ্লিকেট নয় এমন মেসেজ যাবে (old OTP কখনো ইনবক্সে যাবে না)
     if not allow_inbox or already_seen:
         return
 
@@ -630,6 +627,7 @@ def fetch_from_augestel_api():
             time.sleep(retry_after)
             return
         if res.status_code != 200:
+            print(f"Augestel HTTP {res.status_code}: {res.text[:150]}")
             return
         response_data = res.json()
         if not response_data.get("success", False):
@@ -644,21 +642,27 @@ def fetch_from_augestel_api():
                 augestel_old_otp_sent = True
 
         if first_run:
-            # ১ বার old OTP গ্রুপে যাবে (allow_inbox=False যাতে কোনো ইউজারের ইনবক্সে old OTP না যায়)
+            # বট রান হওয়ার পর ১ বার old OTP গ্রুপে পাঠাবে (ইনবক্সে যাবে না)
             for item in records:
-                dispatch_sms_record(item, send_to_group=SEND_OLD_OTP_ONCE_ON_START, allow_inbox=False)
+                dispatch_sms_record(
+                    item,
+                    send_to_group=SEND_OLD_OTP_ONCE_ON_START,
+                    allow_inbox=False,
+                    force_group_send=SEND_OLD_OTP_ONCE_ON_START
+                )
             return
 
+        # এরপর থেকে শুধু নতুন OTP গ্রুপে এবং ইউজারের ইনবক্সে যাবে
         for item in records:
-            dispatch_sms_record(item, send_to_group=True, allow_inbox=True)
+            dispatch_sms_record(item, send_to_group=True, allow_inbox=True, force_group_send=False)
     except Exception as e:
         print(f"Augestel API fetch error: {e}")
 
 def augestel_worker_thread():
-    time.sleep(5)
+    fetch_from_augestel_api()
     while True:
-        fetch_from_augestel_api()
         time.sleep(21)
+        fetch_from_augestel_api()
 
 def fetch_single_api(api):
     if not api.get("status", True) or api["name"] == "Augestel":
@@ -696,7 +700,7 @@ def fast_panels_worker_thread():
     time.sleep(2)
     while True:
         for item in fetch_all_apis_concurrently():
-            dispatch_sms_record(item, send_to_group=True, allow_inbox=True)
+            dispatch_sms_record(item, send_to_group=True, allow_inbox=True, force_group_send=False)
         with data_lock:
             if len(processed_ids) > 8000:
                 processed_ids.clear()
